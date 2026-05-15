@@ -14,6 +14,8 @@ GUARD_LOG = WS / 'logs/openclaw-guard.log'
 PACK_REPO = WS / 'bin/nova-pack-repo'
 IMPROVEMENT_LOOP = WS / 'nova-skill-os/improvement_loop.py'
 SHEETS_VALIDATOR = WS / 'grafana-openclaw-bridge/validate_sheet_contract.py'
+GRAFANA_DASHBOARD = WS / 'grafana-dashboards/support_digest_dashboard.json'
+GRAFANA_DASHBOARD_VALIDATOR = WS / 'grafana-dashboards/validate_dashboard_artifact.py'
 
 @dataclass
 class Check:
@@ -179,6 +181,22 @@ def check_sheets_schema_contract():
         return Check('sheets.schema_contract', 'fail', f'bad json: {e}; {out[-300:]}', ms)
 
 
+def check_grafana_dashboard_artifact():
+    if not GRAFANA_DASHBOARD.exists():
+        return Check('grafana.dashboard_artifact', 'fail', f'missing: {GRAFANA_DASHBOARD}')
+    if not GRAFANA_DASHBOARD_VALIDATOR.exists() or not os.access(GRAFANA_DASHBOARD_VALIDATOR, os.X_OK):
+        return Check('grafana.dashboard_artifact', 'fail', f'missing validator: {GRAFANA_DASHBOARD_VALIDATOR}')
+    ok, out, ms = run([str(GRAFANA_DASHBOARD_VALIDATOR), str(GRAFANA_DASHBOARD)], timeout=20)
+    if not ok:
+        return Check('grafana.dashboard_artifact', 'fail', out[-500:], ms)
+    try:
+        data = json.loads(out)
+        good = data.get('ok') is True and data.get('panels', 0) >= 5
+        return Check('grafana.dashboard_artifact', 'pass' if good else 'warn', f"panels={data.get('panels')}; artifact-only=no-deploy", ms)
+    except Exception as e:
+        return Check('grafana.dashboard_artifact', 'fail', f'bad json: {e}; {out[-300:]}', ms)
+
+
 def check_pack_repo_safety():
     if not PACK_REPO.exists() or not os.access(PACK_REPO, os.X_OK):
         return Check('repo_pack.safety', 'fail', f'missing or not executable: {PACK_REPO}')
@@ -210,7 +228,7 @@ CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
     check_skill_lifecycle_report, check_improvement_loop, check_sheets_schema_contract,
-    check_pack_repo_safety
+    check_grafana_dashboard_artifact, check_pack_repo_safety
 ]
 
 

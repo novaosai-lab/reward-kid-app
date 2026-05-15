@@ -1,0 +1,234 @@
+{
+  "dashboard": {
+    "uid": "nova-support-digest-sheets",
+    "title": "Nova Support Digest — Google Sheets",
+    "tags": [
+      "nova",
+      "support",
+      "google-sheets",
+      "incident-evidence"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "5m",
+    "templating": {
+      "list": [
+        {
+          "name": "sheet_id",
+          "type": "textbox",
+          "label": "Google Sheet ID",
+          "query": "",
+          "current": {
+            "text": "SET_ME_NON_SECRET",
+            "value": "SET_ME_NON_SECRET"
+          }
+        },
+        {
+          "name": "tab",
+          "type": "textbox",
+          "label": "Sheet tab",
+          "query": "IncidentEvidence",
+          "current": {
+            "text": "IncidentEvidence",
+            "value": "IncidentEvidence"
+          }
+        },
+        {
+          "name": "env",
+          "type": "textbox",
+          "label": "Environment",
+          "query": "prod-v2",
+          "current": {
+            "text": "prod-v2",
+            "value": "prod-v2"
+          }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "barchart",
+        "title": "Rows by severity",
+        "description": "IncidentEvidence severity distribution",
+        "datasource": {
+          "type": "grafana-googlesheets-datasource",
+          "uid": "${DS_GOOGLE_SHEETS}"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-googlesheets-datasource",
+              "uid": "${DS_GOOGLE_SHEETS}"
+            },
+            "spreadsheet": "${sheet_id}",
+            "sheet": "${tab}",
+            "range": "A:O",
+            "query": "GROUP BY severity SUM count_sampled"
+          }
+        ],
+        "options": {},
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 2,
+        "type": "barchart",
+        "title": "Rows by service",
+        "description": "Top services by sampled count",
+        "datasource": {
+          "type": "grafana-googlesheets-datasource",
+          "uid": "${DS_GOOGLE_SHEETS}"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 8,
+          "y": 0
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-googlesheets-datasource",
+              "uid": "${DS_GOOGLE_SHEETS}"
+            },
+            "spreadsheet": "${sheet_id}",
+            "sheet": "${tab}",
+            "range": "A:O",
+            "query": "GROUP BY service SUM count_sampled"
+          }
+        ],
+        "options": {},
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 3,
+        "type": "table",
+        "title": "Incident candidates",
+        "description": "Current grouped incident candidates",
+        "datasource": {
+          "type": "grafana-googlesheets-datasource",
+          "uid": "${DS_GOOGLE_SHEETS}"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 16,
+          "y": 0
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-googlesheets-datasource",
+              "uid": "${DS_GOOGLE_SHEETS}"
+            },
+            "spreadsheet": "${sheet_id}",
+            "sheet": "${tab}",
+            "range": "A:O",
+            "query": "SELECT incident_candidate, severity, service, count_sampled, likely_dependency"
+          }
+        ],
+        "options": {},
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 4,
+        "type": "table",
+        "title": "Top error signatures",
+        "description": "Sanitized signatures only",
+        "datasource": {
+          "type": "grafana-googlesheets-datasource",
+          "uid": "${DS_GOOGLE_SHEETS}"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-googlesheets-datasource",
+              "uid": "${DS_GOOGLE_SHEETS}"
+            },
+            "spreadsheet": "${sheet_id}",
+            "sheet": "${tab}",
+            "range": "A:O",
+            "query": "SELECT error_signature, service, endpoint, rpc, count_sampled ORDER BY count_sampled DESC"
+          }
+        ],
+        "options": {},
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      },
+      {
+        "id": 5,
+        "type": "table",
+        "title": "Slow / high rpt endpoints",
+        "description": "Drill-down through Grafana URL",
+        "datasource": {
+          "type": "grafana-googlesheets-datasource",
+          "uid": "${DS_GOOGLE_SHEETS}"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-googlesheets-datasource",
+              "uid": "${DS_GOOGLE_SHEETS}"
+            },
+            "spreadsheet": "${sheet_id}",
+            "sheet": "${tab}",
+            "range": "A:O",
+            "query": "SELECT service, endpoint, max_rpt_ms, count_sampled, grafana_url ORDER BY max_rpt_ms DESC"
+          }
+        ],
+        "options": {},
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        }
+      }
+    ],
+    "annotations": {
+      "list": []
+    }
+  },
+  "overwrite": false,
+  "folderUid": "nova-support",
+  "meta": {
+    "mode": "artifact-only",
+    "deploy": false,
+    "contract": "playbooks/google-sheets-reporting-contract.md",
+    "datasource_plugin": "grafana/google-sheets-datasource",
+    "notes": "Generated locally. Replace datasource UID and sheet ID during approved POC only."
+  }
+}
