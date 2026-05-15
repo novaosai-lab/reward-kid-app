@@ -1,0 +1,155 @@
+{
+  "generated_at": "2026-05-15T10:56:02.252732+07:00",
+  "mode": "report-only",
+  "guardrails": [
+    "no install",
+    "no delete",
+    "no external send",
+    "no auto-enable skills",
+    "human approval for risky changes"
+  ],
+  "memory_files_scanned": [
+    "memory/2026-05-15.md",
+    "memory/2026-05-14.md",
+    "memory/2026-05-13.md"
+  ],
+  "failure_patterns": [
+    {
+      "pattern": "secret_safety",
+      "count": 21,
+      "sources": [
+        "memory/2026-05-15.md",
+        "memory/2026-05-13.md"
+      ],
+      "recommendation": "Keep repo-pack and GitHub checkpoint secret scans in the quality gate."
+    },
+    {
+      "pattern": "silent_or_missing_delivery",
+      "count": 1,
+      "sources": [
+        "memory/2026-05-15.md"
+      ],
+      "recommendation": "Scheduled user-facing jobs need explicit delivery target and clear non-silent policy."
+    }
+  ],
+  "skill_lifecycle": {
+    "total": 8,
+    "status": {
+      "active": 8
+    },
+    "risk": {
+      "medium": 5,
+      "high": 1,
+      "low": 2
+    },
+    "review_queue": [
+      {
+        "id": "support-lead",
+        "name": "Application Support Lead",
+        "reasons": [
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "openclaw-ops",
+        "name": "OpenClaw Operations",
+        "reasons": [
+          "requires approval",
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "n8n-automation",
+        "name": "Automation & n8n",
+        "reasons": [
+          "requires approval",
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "investment-research",
+        "name": "Investment Research",
+        "reasons": [
+          "high risk",
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "second-brain",
+        "name": "Second Brain",
+        "reasons": [
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "mobile-web-testing",
+        "name": "Mobile / Web Testing",
+        "reasons": [
+          "no source_files metadata"
+        ]
+      },
+      {
+        "id": "content-reporting",
+        "name": "Content & Reporting",
+        "reasons": [
+          "no source_files metadata"
+        ]
+      }
+    ]
+  },
+  "harness": {
+    "ok": true,
+    "overall": "pass",
+    "failed": 0,
+    "warned": 0,
+    "check_count": 11
+  },
+  "git_checkpoint": {
+    "last_commit": "5e8cb91 feat: add Hermes-inspired safety guardrails",
+    "dirty_count": 29,
+    "dirty_preview": [
+      "M nova-harness/nova_harness.py",
+      " M nova-skill-os/nova_skill_os.py",
+      "?? .openclaw/",
+      "?? ai-trading-bot/",
+      "?? data/",
+      "?? discord-alert-forwarder/",
+      "?? figma-plugins/",
+      "?? fund-research-assistant/",
+      "?? ideas/",
+      "?? lottery-2digit/",
+      "?? n8n/",
+      "?? notes/",
+      "?? nova-intro-app/",
+      "?? nova-intro-v2/",
+      "?? nova-skill-os/improvement_loop.py",
+      "?? package-lock.json",
+      "?? package.json",
+      "?? playbooks/nova-improvement-loop.md",
+      "?? presentations/",
+      "?? research/improvement-loop/"
+    ]
+  },
+  "proposed_actions": [
+    {
+      "type": "playbook_update",
+      "title": "Distill recurring failure patterns into playbooks/harness",
+      "approval": "safe-doc-change"
+    },
+    {
+      "type": "skill_metadata",
+      "title": "Add missing source_files/risk metadata for reviewed Skill OS entries",
+      "approval": "safe-local-edit"
+    },
+    {
+      "type": "rollback",
+      "title": "Checkpoint sanitized stable changes after verification",
+      "approval": "push-only-after-secret-scan"
+    },
+    {
+      "type": "guardrail",
+      "title": "Keep loop report-only; draft skills stay draft until Nick approves",
+      "approval": "always"
+    }
+  ]
+}

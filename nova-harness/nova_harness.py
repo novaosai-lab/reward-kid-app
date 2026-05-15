@@ -12,6 +12,7 @@ VOICE = WS / 'nova-voice'
 DASH_URL = 'http://127.0.0.1:18888/api/status'
 GUARD_LOG = WS / 'logs/openclaw-guard.log'
 PACK_REPO = WS / 'bin/nova-pack-repo'
+IMPROVEMENT_LOOP = WS / 'nova-skill-os/improvement_loop.py'
 
 @dataclass
 class Check:
@@ -142,6 +143,24 @@ def check_skill_lifecycle_report():
     return Check('skill_os.lifecycle', 'pass' if good else 'warn', 'report-only lifecycle check available' if good else out[-400:], ms)
 
 
+def check_improvement_loop():
+    if os.environ.get('NOVA_HARNESS_SKIP_IMPROVEMENT') == '1':
+        return Check('improvement_loop.report', 'pass', 'skipped for improvement-loop self-collection', 0)
+    t=time.time()
+    ok, out, ms = run([str(IMPROVEMENT_LOOP), '--days', '3', '--json'], timeout=260)
+    if not ok:
+        return Check('improvement_loop.report', 'fail', out[-500:], ms)
+    try:
+        data=json.loads(out)
+        guardrails=data.get('guardrails') or []
+        report_path=Path(data.get('report',''))
+        good=report_path.exists() and data.get('mode')=='report-only' and 'no external send' in guardrails and 'no auto-enable skills' in guardrails
+        detail=f"mode={data.get('mode')}; report={report_path.name}; actions={len(data.get('proposed_actions', []))}"
+        return Check('improvement_loop.report', 'pass' if good else 'warn', detail, ms)
+    except Exception as e:
+        return Check('improvement_loop.report', 'fail', f'bad json: {e}; {out[-300:]}', ms)
+
+
 def check_pack_repo_safety():
     if not PACK_REPO.exists() or not os.access(PACK_REPO, os.X_OK):
         return Check('repo_pack.safety', 'fail', f'missing or not executable: {PACK_REPO}')
@@ -172,7 +191,7 @@ def check_pack_repo_safety():
 CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
-    check_skill_lifecycle_report, check_pack_repo_safety
+    check_skill_lifecycle_report, check_improvement_loop, check_pack_repo_safety
 ]
 
 

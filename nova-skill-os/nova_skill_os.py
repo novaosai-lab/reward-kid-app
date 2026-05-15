@@ -87,6 +87,11 @@ def skill_lifecycle_report() -> None:
     print('\nPolicy: report-only. Archive/delete/enable external actions require Nick approval.')
 
 
+def improvement_report() -> None:
+    script = ROOT / 'nova-skill-os/improvement_loop.py'
+    print(run([str(script), '--days', '7']))
+
+
 def openclaw_health() -> None:
     print('Gateway:')
     print(run(['openclaw', 'gateway', 'status']).split('\n')[0:3])
@@ -110,8 +115,10 @@ def main(argv: list[str]) -> int:
         openclaw_health()
     elif cmd in {'skill-lifecycle', '/skill-lifecycle'}:
         skill_lifecycle_report()
+    elif cmd in {'improvement-report', '/improvement-report'}:
+        improvement_report()
     else:
-        print('Commands: skills | skill-lifecycle | alert-dashboard | alert-summary | openclaw-health')
+        print('Commands: skills | skill-lifecycle | improvement-report | alert-dashboard | alert-summary | openclaw-health')
     return 0
 
 
