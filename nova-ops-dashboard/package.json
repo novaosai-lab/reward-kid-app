@@ -1,0 +1,11 @@
+{
+  "name": "nova-ops-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nova full OpenClaw Ops Dashboard",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {}
+}

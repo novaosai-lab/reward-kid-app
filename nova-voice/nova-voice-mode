@@ -1,0 +1,5 @@
+#!/bin/zsh
+set -e
+ROOT="/Users/nova/.openclaw/workspace/nova-voice"
+source "$ROOT/.venv/bin/activate"
+exec "$ROOT/nova_voice_mode.py" "$@"

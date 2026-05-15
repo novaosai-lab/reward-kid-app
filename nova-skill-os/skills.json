@@ -1,0 +1,99 @@
+[
+  {
+    "id": "support-lead",
+    "name_th": "Application Support Lead",
+    "name_en": "Application Support Lead",
+    "category": "support",
+    "description": "Incident, RCA, SLA risk, L3 troubleshooting, operational judgment.",
+    "triggers": ["incident", "RCA", "SLA", "ticket", "support", "alert"],
+    "outputs": ["triage", "risk summary", "RCA draft", "follow-up actions"],
+    "risk_level": "medium",
+    "requires_approval": false,
+    "status": "active"
+  },
+  {
+    "id": "discord-alert-intelligence",
+    "name_th": "Discord Alert Intelligence",
+    "name_en": "Discord Alert Intelligence",
+    "category": "automation",
+    "description": "Parse Discord order alerts, dedupe, categorize, sync Google Sheet dashboard, send short Google Chat link summaries.",
+    "triggers": ["prod-order-monitor", "Discord alert", "Google Sheet", "Google Chat"],
+    "outputs": ["Alerts sheet rows", "Summary dashboard", "Google Chat sheet link"],
+    "risk_level": "medium",
+    "requires_approval": false,
+    "source_files": ["discord-alert-forwarder/forward_prod_order_alerts.py", "discord-alert-forwarder/google_sheet_writer.py"],
+    "status": "active"
+  },
+  {
+    "id": "openclaw-ops",
+    "name_th": "OpenClaw Ops",
+    "name_en": "OpenClaw Operations",
+    "category": "ops",
+    "description": "Gateway, channels, cron jobs, launch agents, health checks, status verification.",
+    "triggers": ["openclaw", "gateway", "cron", "channel", "status"],
+    "outputs": ["health report", "fix recommendation", "safe restart"],
+    "risk_level": "medium",
+    "requires_approval": true,
+    "status": "active"
+  },
+  {
+    "id": "n8n-automation",
+    "name_th": "Automation & n8n",
+    "name_en": "Automation & n8n",
+    "category": "automation",
+    "description": "Design and harden n8n workflows for Google Sheets, Google Chat, OpenClaw, schedules, and webhooks.",
+    "triggers": ["n8n", "workflow", "Google Chat", "Google Sheets", "webhook"],
+    "outputs": ["workflow JSON", "import checklist", "security notes"],
+    "risk_level": "medium",
+    "requires_approval": true,
+    "status": "active"
+  },
+  {
+    "id": "investment-research",
+    "name_th": "Investment Research",
+    "name_en": "Investment Research",
+    "category": "research",
+    "description": "SCB/Thai stock and fund research briefs with research-only guardrails.",
+    "triggers": ["SCB", "ลงทุน", "fund", "หุ้น", "brief"],
+    "outputs": ["morning brief", "evening brief", "BUY_ON_DCA/WAIT/AVOID_FOR_NOW research verdict"],
+    "risk_level": "high",
+    "requires_approval": false,
+    "status": "active"
+  },
+  {
+    "id": "second-brain",
+    "name_th": "Second Brain",
+    "name_en": "Second Brain",
+    "category": "knowledge",
+    "description": "Local memory/repo knowledge indexing, search, and static dashboard.",
+    "triggers": ["memory", "ค้น", "second brain", "knowledge"],
+    "outputs": ["search results", "dashboard", "citations"],
+    "risk_level": "low",
+    "requires_approval": false,
+    "status": "active"
+  },
+  {
+    "id": "mobile-web-testing",
+    "name_th": "Mobile / Web Testing",
+    "name_en": "Mobile / Web Testing",
+    "category": "qa",
+    "description": "Emulator, adb, screenshots, web testing, QA/release risk checks.",
+    "triggers": ["apk", "emulator", "adb", "test", "QA", "release"],
+    "outputs": ["test evidence", "bug notes", "release risk"],
+    "risk_level": "medium",
+    "requires_approval": false,
+    "status": "active"
+  },
+  {
+    "id": "content-reporting",
+    "name_th": "Content & Reporting",
+    "name_en": "Content & Reporting",
+    "category": "reporting",
+    "description": "Executive summaries, Google Slides, support reports, readable Thai digests.",
+    "triggers": ["summary", "slides", "report", "digest", "executive"],
+    "outputs": ["Thai summary", "slide draft", "executive report"],
+    "risk_level": "low",
+    "requires_approval": false,
+    "status": "active"
+  }
+]

@@ -1,0 +1,135 @@
+const http = require('http');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const path = require('path');
+const { execFile } = require('child_process');
+
+const ROOT = __dirname;
+const PUBLIC = path.join(ROOT, 'public');
+const WORKSPACE = '/Users/nova/.openclaw/workspace';
+const PORT = Number(process.env.NOVA_OPS_PORT || 18888);
+const OPENCLAW = '/opt/homebrew/bin/openclaw';
+
+function run(cmd, args = [], timeout = 15000) {
+  return new Promise(resolve => {
+    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({ ok: !error, code: error?.code ?? 0, output: `${stdout || ''}${stderr ? '\n' + stderr : ''}`.trim() });
+    });
+  });
+}
+
+async function tail(file, lines = 40) {
+  try {
+    const txt = await fsp.readFile(file, 'utf8');
+    return txt.trim().split('\n').slice(-lines).map(line => {
+      try { return JSON.parse(line); } catch { return { ts: '', event: 'raw', output: line }; }
+    });
+  } catch { return []; }
+}
+
+function statusFromText(text, failWords = ['failed', 'unreachable', 'not running', 'error']) {
+  if (!text) return 'unknown';
+  const low = text.toLowerCase();
+  if (failWords.some(w => low.includes(w))) return 'critical';
+  if (low.includes('ok') || low.includes('running') || low.includes('reachable')) return 'healthy';
+  return 'warning';
+}
+
+async function collect() {
+  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker] = await Promise.all([
+    run(OPENCLAW, ['status'], 25000),
+    run(OPENCLAW, ['gateway', 'health'], 15000),
+    run(OPENCLAW, ['gateway', 'status'], 15000),
+    run(OPENCLAW, ['node', 'status'], 15000),
+    run(OPENCLAW, ['tasks', 'list'], 15000),
+    run(OPENCLAW, ['cron', 'list'], 15000),
+    run('/usr/local/bin/docker', ['ps', '--format', '{{.Names}}|{{.Status}}|{{.Ports}}'], 8000),
+  ]);
+
+  let docker2 = docker;
+  if (!docker.ok) docker2 = await run('/opt/homebrew/bin/docker', ['ps', '--format', '{{.Names}}|{{.Status}}|{{.Ports}}'], 8000);
+
+  const guardLog = await tail(path.join(WORKSPACE, 'logs/openclaw-guard.log'), 50);
+  const guardRecent = guardLog.slice(-1)[0] || null;
+  const restarts = guardLog.filter(x => String(x.event || '').includes('restart')).slice(-20);
+  const healthChecks = guardLog.filter(x => x.event === 'health_check');
+
+  const channels = [];
+  for (const name of ['Telegram', 'Discord']) {
+    const re = new RegExp(`${name}\\s+│\\s+ON\\s+│\\s+OK`, 'i');
+    channels.push({ name, status: re.test(status.output) ? 'healthy' : (status.output.includes(name) ? 'warning' : 'unknown') });
+  }
+
+  const services = [
+    { name: 'OpenClaw Gateway', status: gatewayStatus.ok && gatewayHealth.ok ? 'healthy' : 'critical', detail: gatewayHealth.output || gatewayStatus.output },
+    { name: 'OpenClaw Node', status: nodeStatus.ok && /running/i.test(nodeStatus.output) ? 'healthy' : statusFromText(nodeStatus.output), detail: nodeStatus.output },
+    { name: 'Guard Agent', status: guardRecent ? 'healthy' : 'warning', detail: guardRecent ? `${guardRecent.event} @ ${guardRecent.ts}` : 'No guard log yet' },
+    { name: 'Channels', status: channels.every(c => c.status === 'healthy') ? 'healthy' : 'warning', detail: channels.map(c => `${c.name}: ${c.status}`).join(' · ') },
+  ];
+
+  const dockerRows = docker2.ok ? docker2.output.split('\n').filter(Boolean).map(row => {
+    const [name, status, ports] = row.split('|');
+    return { name, status, ports, isN8n: /n8n/i.test(name) };
+  }) : [];
+
+  const sessionsMatch = status.output.match(/Sessions\s+│\s+([^│]+)/i);
+  const tasksMatch = status.output.match(/Tasks\s+│\s+([^│]+)/i);
+  const heartbeatMatch = status.output.match(/Heartbeat\s+│\s+([^│]+)/i);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    overall: services.some(s => s.status === 'critical') ? 'critical' : services.some(s => s.status === 'warning') ? 'warning' : 'healthy',
+    summary: {
+      sessions: sessionsMatch?.[1]?.trim() || 'see raw status',
+      tasks: tasksMatch?.[1]?.trim() || (tasks.ok ? 'task command ok' : 'task command unavailable'),
+      heartbeat: heartbeatMatch?.[1]?.trim() || 'unknown',
+      guardChecks: healthChecks.length,
+      recentRestarts: restarts.length,
+    },
+    services,
+    channels,
+    docker: dockerRows,
+    raw: {
+      openclawStatus: status.output,
+      tasks: tasks.output,
+      cron: cron.output,
+      gatewayStatus: gatewayStatus.output,
+      nodeStatus: nodeStatus.output,
+    },
+    guard: { recent: guardLog.slice(-12).reverse(), restarts: restarts.reverse() },
+    roadmap: [
+      'Read-only dashboard live MVP',
+      'Add authenticated admin actions with explicit confirmation',
+      'Add n8n workflow execution/error API integration',
+      'Add incident timeline and weekly ops report export',
+      'Add Telegram alerting for critical Guard events'
+    ]
+  };
+}
+
+function send(res, code, type, body) {
+  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+  res.end(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === '/api/status') {
+    try { send(res, 200, 'application/json', JSON.stringify(await collect())); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  const file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
+  const full = path.normalize(path.join(PUBLIC, file));
+  if (!full.startsWith(PUBLIC)) return send(res, 403, 'text/plain', 'Forbidden');
+  try {
+    const body = await fsp.readFile(full);
+    const ext = path.extname(full);
+    const type = ext === '.css' ? 'text/css' : ext === '.js' ? 'application/javascript' : 'text/html';
+    send(res, 200, type, body);
+  } catch { send(res, 404, 'text/plain', 'Not found'); }
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`Nova Ops Dashboard running at http://127.0.0.1:${PORT}`);
+});

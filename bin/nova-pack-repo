@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Nova repo pack wrapper.
+
+Safely packages a local repository into an AI-readable file using Repomix.
+Defaults are privacy-preserving: no remote repos, no logs/diffs unless requested,
+and a broad secret/noise ignore list.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+WORKSPACE = Path('/Users/nova/.openclaw/workspace')
+DEFAULT_OUT_DIR = WORKSPACE / 'research' / 'repo-packs'
+
+DEFAULT_IGNORES = [
+    # dependencies / build noise
+    'node_modules/**', '.pnpm-store/**', '.yarn/**', '.npm/**', 'dist/**', 'build/**', '.next/**', '.turbo/**',
+    'coverage/**', '.pytest_cache/**', '__pycache__/**', '.venv/**', 'venv/**', 'target/**', '.gradle/**',
+    # VCS / generated / binary-ish
+    '.git/**', '*.log', 'logs/**', 'tmp/**', 'temp/**', '.DS_Store', '*.lockb',
+    '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.ico', '*.pdf', '*.mp3', '*.wav', '*.ogg', '*.mp4', '*.mov', '*.zip', '*.tar', '*.gz',
+    # secrets / credentials
+    '.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*credentials*.json', '*token*.json', '*secret*', '*secrets*',
+    'google-auth/**', '.aws/**', '.config/gcloud/**', '.ssh/**',
+    # OpenClaw noisy/private surfaces
+    'media/**', 'memory/**', 'MEMORY.md', 'HEARTBEAT.md', 'logs/**',
+]
+
+SECRET_PATTERNS = [
+    re.compile(r'AIza[0-9A-Za-z_\-]{20,}'),
+    re.compile(r'sk-[A-Za-z0-9_\-]{20,}'),
+    re.compile(r'ghp_[A-Za-z0-9_]{20,}'),
+    re.compile(r'github_pat_[A-Za-z0-9_]{20,}'),
+    re.compile(r'xox[baprs]-[A-Za-z0-9\-]{20,}'),
+    re.compile(r'AKIA[0-9A-Z]{16}'),
+    re.compile(r'(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|password)\s*[:=]\s*["\']?[^"\'\s]{12,}'),
+]
+
+
+def slugify(value: str) -> str:
+    value = re.sub(r'[^A-Za-z0-9._-]+', '-', value.strip())
+    return value.strip('-') or 'repo'
+
+
+def run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, cwd=str(cwd), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def scan_file(path: Path) -> list[str]:
+    try:
+        if path.stat().st_size > 20 * 1024 * 1024:
+            return [f'Output too large to scan comfortably: {path.stat().st_size} bytes']
+        text = path.read_text(errors='ignore')
+    except Exception as exc:
+        return [f'Could not scan output: {exc}']
+    findings = []
+    for idx, pat in enumerate(SECRET_PATTERNS, 1):
+        if pat.search(text):
+            findings.append(f'Potential secret pattern #{idx} found')
+    return findings
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description='Safely pack a local repo for AI review using Repomix.')
+    parser.add_argument('path', nargs='?', default='.', help='Local repo/project path to pack')
+    parser.add_argument('-o', '--output', help='Output file path. Default: research/repo-packs/<repo>-<timestamp>.md')
+    parser.add_argument('--style', choices=['markdown', 'xml', 'json', 'plain'], default='markdown')
+    parser.add_argument('--compress', action='store_true', help='Use Repomix structural compression')
+    parser.add_argument('--include', help='Comma-separated include globs')
+    parser.add_argument('--ignore', action='append', default=[], help='Extra comma-separated ignore globs. Can be repeated')
+    parser.add_argument('--include-diffs', action='store_true', help='Include local git diffs. Off by default for privacy')
+    parser.add_argument('--include-logs', action='store_true', help='Include git logs. Off by default for privacy')
+    parser.add_argument('--logs-count', type=int, default=10)
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--no-scan', action='store_true', help='Skip post-output secret pattern scan')
+    parser.add_argument('--repomix-bin', default=os.environ.get('REPOMIX_BIN', 'npx --yes repomix@latest'), help='Repomix command; default uses npx repomix@latest')
+    args = parser.parse_args()
+
+    repo = Path(args.path).expanduser().resolve()
+    if not repo.exists() or not repo.is_dir():
+        print(f'[error] Not a directory: {repo}', file=sys.stderr)
+        return 2
+    if str(repo).startswith(('http://', 'https://')) or ':' in args.path.split('/')[0]:
+        print('[error] Remote repositories are intentionally disabled in nova-pack-repo. Clone first, then pack locally.', file=sys.stderr)
+        return 2
+
+    out = Path(args.output).expanduser().resolve() if args.output else DEFAULT_OUT_DIR / f'{slugify(repo.name)}-{datetime.now().strftime("%Y%m%d-%H%M%S")}.{ "md" if args.style == "markdown" else args.style }'
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    ignore_parts = list(DEFAULT_IGNORES)
+    for item in args.ignore:
+        ignore_parts.extend([x.strip() for x in item.split(',') if x.strip()])
+
+    repomix_cmd = args.repomix_bin.split()
+    cmd = repomix_cmd + ['--style', args.style, '--output', str(out), '--ignore', ','.join(ignore_parts)]
+    if args.include:
+        cmd += ['--include', args.include]
+    if args.compress:
+        cmd.append('--compress')
+    if args.include_diffs:
+        cmd.append('--include-diffs')
+    if args.include_logs:
+        cmd += ['--include-logs', '--include-logs-count', str(args.logs_count)]
+
+    print(f'[nova-pack-repo] repo: {repo}')
+    print(f'[nova-pack-repo] output: {out}')
+    print(f'[nova-pack-repo] style: {args.style} compress={args.compress}')
+    print(f'[nova-pack-repo] privacy: remote disabled, logs={args.include_logs}, diffs={args.include_diffs}')
+    if args.dry_run:
+        print('[nova-pack-repo] command: ' + ' '.join(cmd))
+        return 0
+
+    result = run(cmd, repo)
+    print(result.stdout)
+    if result.returncode != 0:
+        print(f'[error] Repomix failed with code {result.returncode}', file=sys.stderr)
+        return result.returncode
+
+    if not out.exists():
+        print(f'[error] Output not found: {out}', file=sys.stderr)
+        return 1
+
+    if not args.no_scan:
+        findings = scan_file(out)
+        if findings:
+            quarantine = out.with_suffix(out.suffix + '.unsafe')
+            shutil.move(str(out), str(quarantine))
+            print('[warning] Potential sensitive content detected. Output moved to: ' + str(quarantine), file=sys.stderr)
+            for f in findings:
+                print('[warning] ' + f, file=sys.stderr)
+            print('[warning] Review manually before sharing with any model or external service.', file=sys.stderr)
+            return 3
+
+    print(f'[nova-pack-repo] done: {out}')
+    print(f'[nova-pack-repo] size: {out.stat().st_size} bytes')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

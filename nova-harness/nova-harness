@@ -1,0 +1,2 @@
+#!/bin/zsh
+exec /usr/bin/env python3 /Users/nova/.openclaw/workspace/nova-harness/nova_harness.py "$@"

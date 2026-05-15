@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nova Ops Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div>
+  <header class="topbar">
+    <div><div class="eyebrow">OpenClaw Multi-Agent Command Center</div><h1>Nova Ops Dashboard</h1></div>
+    <div class="top-actions"><span id="updated" class="muted">Loading…</span><button id="refresh">Refresh</button></div>
+  </header>
+
+  <main>
+    <section class="hero card">
+      <div>
+        <div class="eyebrow">Overall posture</div>
+        <div class="status-line"><span id="overall-dot" class="dot"></span><span id="overall">Collecting telemetry</span></div>
+        <p>Read-only control center for Nova Main Agent, Guard Watchdog, OpenClaw services, channels, tasks, cron and local workflow surface.</p>
+      </div>
+      <div class="agent-map">
+        <div class="node main">Nova<br><small>Main Worker</small></div>
+        <div class="link"></div>
+        <div class="node guard">Guard<br><small>Admin Watchdog</small></div>
+      </div>
+    </section>
+
+    <section class="metrics grid4">
+      <div class="metric card"><span>Sessions</span><strong id="m-sessions">—</strong></div>
+      <div class="metric card"><span>Tasks</span><strong id="m-tasks">—</strong></div>
+      <div class="metric card"><span>Heartbeat</span><strong id="m-heartbeat">—</strong></div>
+      <div class="metric card"><span>Guard restarts</span><strong id="m-restarts">—</strong></div>
+    </section>
+
+    <section class="layout">
+      <div class="left">
+        <div class="card"><div class="section-head"><h2>Service Health</h2><span>Gateway · Node · Guard · Channels</span></div><div id="services" class="service-list"></div></div>
+        <div class="card"><div class="section-head"><h2>Guard Timeline</h2><span>Latest watchdog checks and recovery events</span></div><div id="guard" class="timeline"></div></div>
+        <div class="card"><div class="section-head"><h2>Local Workflow Surface</h2><span>Docker/n8n containers if available</span></div><div id="docker" class="table"></div></div>
+      </div>
+      <div class="right">
+        <div class="card"><div class="section-head"><h2>Channels</h2><span>Telegram / Discord</span></div><div id="channels" class="chips"></div></div>
+        <div class="card"><div class="section-head"><h2>Admin Actions</h2><span>Disabled until explicit safety layer</span></div><div class="actions"><button disabled>Restart Gateway</button><button disabled>Restart Node</button><button disabled>Run Deep Audit</button></div><p class="muted">Next version can add actions with confirmation, auth token, rate limits and full audit logging.</p></div>
+        <div class="card"><div class="section-head"><h2>Roadmap</h2><span>Full dashboard path</span></div><ol id="roadmap"></ol></div>
+        <details class="card raw"><summary>Raw OpenClaw Status</summary><pre id="raw">—</pre></details>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
