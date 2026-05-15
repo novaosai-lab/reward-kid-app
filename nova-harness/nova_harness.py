@@ -13,6 +13,7 @@ DASH_URL = 'http://127.0.0.1:18888/api/status'
 GUARD_LOG = WS / 'logs/openclaw-guard.log'
 PACK_REPO = WS / 'bin/nova-pack-repo'
 IMPROVEMENT_LOOP = WS / 'nova-skill-os/improvement_loop.py'
+SHEETS_VALIDATOR = WS / 'grafana-openclaw-bridge/validate_sheet_contract.py'
 
 @dataclass
 class Check:
@@ -161,6 +162,23 @@ def check_improvement_loop():
         return Check('improvement_loop.report', 'fail', f'bad json: {e}; {out[-300:]}', ms)
 
 
+def check_sheets_schema_contract():
+    if not SHEETS_VALIDATOR.exists() or not os.access(SHEETS_VALIDATOR, os.X_OK):
+        return Check('sheets.schema_contract', 'fail', f'missing or not executable: {SHEETS_VALIDATOR}')
+    ok, out, ms = run([str(SHEETS_VALIDATOR), '--sample'], timeout=20)
+    if not ok:
+        return Check('sheets.schema_contract', 'fail', out[-500:], ms)
+    try:
+        data = json.loads(out)
+        headers = data.get('headers') or []
+        required = {'created_at_gmt7', 'env', 'incident_candidate', 'service', 'count_sampled', 'severity', 'grafana_url'}
+        good = data.get('ok') is True and required.issubset(set(headers)) and len(headers) == 15
+        detail = f"rows={data.get('row_count')}; columns={len(headers)}; offline_validator=ok"
+        return Check('sheets.schema_contract', 'pass' if good else 'warn', detail, ms)
+    except Exception as e:
+        return Check('sheets.schema_contract', 'fail', f'bad json: {e}; {out[-300:]}', ms)
+
+
 def check_pack_repo_safety():
     if not PACK_REPO.exists() or not os.access(PACK_REPO, os.X_OK):
         return Check('repo_pack.safety', 'fail', f'missing or not executable: {PACK_REPO}')
@@ -191,7 +209,8 @@ def check_pack_repo_safety():
 CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
-    check_skill_lifecycle_report, check_improvement_loop, check_pack_repo_safety
+    check_skill_lifecycle_report, check_improvement_loop, check_sheets_schema_contract,
+    check_pack_repo_safety
 ]
 
 
