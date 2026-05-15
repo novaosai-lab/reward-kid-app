@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path('/Users/nova/.openclaw/workspace')
@@ -22,8 +23,12 @@ def run(cmd: list[str]) -> str:
         return f'ERROR: {type(exc).__name__}'
 
 
+def load_skills() -> list[dict]:
+    return json.loads(SKILLS.read_text())
+
+
 def skills() -> None:
-    data = json.loads(SKILLS.read_text())
+    data = load_skills()
     groups: dict[str, list[dict]] = {}
     for item in data:
         groups.setdefault(item['category'], []).append(item)
@@ -53,6 +58,35 @@ def alert_summary() -> None:
     print(f'\nDashboard: {SHEET_URL}')
 
 
+def skill_lifecycle_report() -> None:
+    data = load_skills()
+    now = datetime.now(timezone.utc).date().isoformat()
+    print(f'Nova Skill OS lifecycle report — {now}')
+    print(f'Total skills: {len(data)}')
+    by_status = Counter((x.get('status') or 'unknown') for x in data)
+    by_risk = Counter((x.get('risk_level') or 'unknown') for x in data)
+    print('\nStatus')
+    for k, v in sorted(by_status.items()): print(f'- {k}: {v}')
+    print('\nRisk')
+    for k, v in sorted(by_risk.items()): print(f'- {k}: {v}')
+
+    review = []
+    for item in data:
+        reasons = []
+        if item.get('risk_level') == 'high': reasons.append('high risk')
+        if item.get('requires_approval'): reasons.append('requires approval')
+        if not item.get('source_files'): reasons.append('no source_files metadata')
+        if not item.get('triggers'): reasons.append('no triggers')
+        if item.get('status') not in {'active', 'pinned', 'archived', 'draft'}: reasons.append('unknown status')
+        if reasons:
+            review.append((item.get('id','?'), item.get('name_en') or item.get('name_th') or '?', reasons))
+    print('\nReview queue (report-only; no auto-delete)')
+    for sid, name, reasons in review:
+        print(f'- {sid} — {name}: {", ".join(reasons)}')
+    if not review: print('- none')
+    print('\nPolicy: report-only. Archive/delete/enable external actions require Nick approval.')
+
+
 def openclaw_health() -> None:
     print('Gateway:')
     print(run(['openclaw', 'gateway', 'status']).split('\n')[0:3])
@@ -74,8 +108,10 @@ def main(argv: list[str]) -> int:
         alert_summary()
     elif cmd in {'openclaw-health', '/openclaw-health'}:
         openclaw_health()
+    elif cmd in {'skill-lifecycle', '/skill-lifecycle'}:
+        skill_lifecycle_report()
     else:
-        print('Commands: skills | alert-dashboard | alert-summary | openclaw-health')
+        print('Commands: skills | skill-lifecycle | alert-dashboard | alert-summary | openclaw-health')
     return 0
 
 

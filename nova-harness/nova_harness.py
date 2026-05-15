@@ -134,6 +134,14 @@ def check_policy():
     return Check('policy.admin_actions', 'pass' if admin_disabled else 'warn', 'dashboard admin actions disabled' if admin_disabled else 'admin action state unclear')
 
 
+def check_skill_lifecycle_report():
+    t=time.time()
+    cmd = [str(WS/'nova-skill-os/nova_skill_os.py'), 'skill-lifecycle']
+    ok, out, ms = run(cmd, timeout=20)
+    good = ok and 'Review queue' in out and 'report-only' in out
+    return Check('skill_os.lifecycle', 'pass' if good else 'warn', 'report-only lifecycle check available' if good else out[-400:], ms)
+
+
 def check_pack_repo_safety():
     if not PACK_REPO.exists() or not os.access(PACK_REPO, os.X_OK):
         return Check('repo_pack.safety', 'fail', f'missing or not executable: {PACK_REPO}')
@@ -148,6 +156,7 @@ def check_pack_repo_safety():
         src_key = 'API_' + 'KEY'
         (repo/'.env').write_text(f'{env_key}={ignored_secret}\n', encoding='utf-8')
         (repo/'src/config.py').write_text(f'{src_key} = "{inline_secret}"\n', encoding='utf-8')
+        (repo/'src/more.py').write_text('AUTH = "Bearer " + "ghp_" + "z" * 32\nDB = "postgres://user:" + "pw" * 10 + "@localhost/db"\n', encoding='utf-8')
         ok, stdout, _ = run([str(PACK_REPO), str(repo), '-o', str(out)], timeout=180)
         unsafe=out.with_suffix(out.suffix + '.unsafe')
         # Expected: wrapper succeeds at packing, then quarantines due to post-output secret scan (exit 3).
@@ -163,7 +172,7 @@ def check_pack_repo_safety():
 CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
-    check_pack_repo_safety
+    check_skill_lifecycle_report, check_pack_repo_safety
 ]
 
 
