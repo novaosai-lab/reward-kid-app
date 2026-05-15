@@ -1,0 +1,163 @@
+{
+  "ok": true,
+  "source": "google-sheets",
+  "sheet_id": "19qTC1B8jM9XRpX_6x3eT7BpMQt4ypciJ1_rKCRkv2Nk",
+  "tab": "IncidentEvidence",
+  "generated_at": "2026-05-15T15:48:26.078821+00:00",
+  "summary": {
+    "row_count": 4,
+    "sample_count": 70,
+    "severity": [
+      [
+        "P2",
+        45
+      ],
+      [
+        "P3",
+        25
+      ]
+    ],
+    "service": [
+      [
+        "catalog-api",
+        45
+      ],
+      [
+        "commerce-api",
+        12
+      ],
+      [
+        "promotion-api",
+        8
+      ],
+      [
+        "gateway",
+        5
+      ]
+    ],
+    "candidates": [
+      [
+        "Slow API endpoint",
+        45
+      ],
+      [
+        "HPC/R4M downstream timeout spike",
+        12
+      ],
+      [
+        "Promotion dependency errors",
+        8
+      ],
+      [
+        "Gateway upstream 502",
+        5
+      ]
+    ],
+    "signatures": [
+      [
+        "slow endpoint avg=4200ms method=GET rpc=200",
+        45
+      ],
+      [
+        "timeout calling point-wallet mid=<id>",
+        12
+      ],
+      [
+        "coupon validation failed RDM-<ref>",
+        8
+      ],
+      [
+        "bad gateway upstream reset",
+        5
+      ]
+    ],
+    "top_latency": [
+      [
+        "catalog-api",
+        12880.0
+      ],
+      [
+        "commerce-api",
+        8421.5
+      ],
+      [
+        "promotion-api",
+        3100.0
+      ],
+      [
+        "gateway",
+        2200.0
+      ]
+    ]
+  },
+  "rows": [
+    {
+      "created_at_gmt7": "2026-05-15 22:40:54",
+      "window_gmt7": "2026-05-15T12:00:00Z to 2026-05-15T15:00:00Z",
+      "env": "test",
+      "incident_candidate": "HPC/R4M downstream timeout spike",
+      "service": "commerce-api",
+      "endpoint": "/api/orders",
+      "rpc": "504",
+      "count_sampled": "12",
+      "max_rpt_ms": "8421.5",
+      "sample_tid": "tid-test-001",
+      "error_signature": "timeout calling point-wallet mid=<id>",
+      "likely_dependency": "customer point / point-wallet",
+      "severity": "P3",
+      "grafana_url": "https://grafana.example.com/d/example?var-tid=tid-test-001",
+      "notes": "Synthetic POC row; no customer data"
+    },
+    {
+      "created_at_gmt7": "2026-05-15 22:40:54",
+      "window_gmt7": "2026-05-15T12:00:00Z to 2026-05-15T15:00:00Z",
+      "env": "test",
+      "incident_candidate": "Slow API endpoint",
+      "service": "catalog-api",
+      "endpoint": "/api/products",
+      "rpc": "200",
+      "count_sampled": "45",
+      "max_rpt_ms": "12880",
+      "sample_tid": "tid-test-002",
+      "error_signature": "slow endpoint avg=4200ms method=GET rpc=200",
+      "likely_dependency": "latency / downstream performance",
+      "severity": "P2",
+      "grafana_url": "https://grafana.example.com/d/example?var-tid=tid-test-002",
+      "notes": "Synthetic POC row; no customer data"
+    },
+    {
+      "created_at_gmt7": "2026-05-15 22:40:54",
+      "window_gmt7": "2026-05-15T15:00:00Z to 2026-05-15T18:00:00Z",
+      "env": "test",
+      "incident_candidate": "Promotion dependency errors",
+      "service": "promotion-api",
+      "endpoint": "/api/coupons/apply",
+      "rpc": "500",
+      "count_sampled": "8",
+      "max_rpt_ms": "3100",
+      "sample_tid": "tid-test-003",
+      "error_signature": "coupon validation failed RDM-<ref>",
+      "likely_dependency": "promotion / coupon",
+      "severity": "P3",
+      "grafana_url": "https://grafana.example.com/d/example?var-tid=tid-test-003",
+      "notes": "Synthetic POC row; no customer data"
+    },
+    {
+      "created_at_gmt7": "2026-05-15 22:40:54",
+      "window_gmt7": "2026-05-15T15:00:00Z to 2026-05-15T18:00:00Z",
+      "env": "test",
+      "incident_candidate": "Gateway upstream 502",
+      "service": "gateway",
+      "endpoint": "/api/payment/callback",
+      "rpc": "502",
+      "count_sampled": "5",
+      "max_rpt_ms": "2200",
+      "sample_tid": "tid-test-004",
+      "error_signature": "bad gateway upstream reset",
+      "likely_dependency": "gateway / nginx upstream",
+      "severity": "P3",
+      "grafana_url": "https://grafana.example.com/d/example?var-tid=tid-test-004",
+      "notes": "Synthetic POC row; no customer data"
+    }
+  ]
+}

@@ -16,6 +16,7 @@ IMPROVEMENT_LOOP = WS / 'nova-skill-os/improvement_loop.py'
 SHEETS_VALIDATOR = WS / 'grafana-openclaw-bridge/validate_sheet_contract.py'
 GRAFANA_DASHBOARD = WS / 'grafana-dashboards/support_digest_dashboard.json'
 GRAFANA_DASHBOARD_VALIDATOR = WS / 'grafana-dashboards/validate_dashboard_artifact.py'
+SUPPORT_DIGEST_JSON = WS / 'nova-ops-dashboard/public/data/support_digest.json'
 
 @dataclass
 class Check:
@@ -197,6 +198,21 @@ def check_grafana_dashboard_artifact():
         return Check('grafana.dashboard_artifact', 'fail', f'bad json: {e}; {out[-300:]}', ms)
 
 
+def check_support_digest_web_data():
+    t=time.time()
+    if not SUPPORT_DIGEST_JSON.exists():
+        return Check('support_digest.web_data', 'warn', f'missing: {SUPPORT_DIGEST_JSON}', 0)
+    try:
+        data=json.loads(SUPPORT_DIGEST_JSON.read_text(encoding='utf-8'))
+        summary=data.get('summary') or {}
+        rows=data.get('rows') or []
+        good=data.get('ok') is True and summary.get('row_count', 0) == len(rows) and {'severity','service','candidates'}.issubset(summary.keys())
+        detail=f"rows={len(rows)}; samples={summary.get('sample_count',0)}; source={data.get('source','unknown')}"
+        return Check('support_digest.web_data', 'pass' if good else 'warn', detail, int((time.time()-t)*1000))
+    except Exception as e:
+        return Check('support_digest.web_data', 'fail', str(e), int((time.time()-t)*1000))
+
+
 def check_pack_repo_safety():
     if not PACK_REPO.exists() or not os.access(PACK_REPO, os.X_OK):
         return Check('repo_pack.safety', 'fail', f'missing or not executable: {PACK_REPO}')
@@ -228,7 +244,7 @@ CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
     check_skill_lifecycle_report, check_improvement_loop, check_sheets_schema_contract,
-    check_grafana_dashboard_artifact, check_pack_repo_safety
+    check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety
 ]
 
 

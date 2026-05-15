@@ -3,6 +3,18 @@ const label = s => s === 'healthy' ? 'Healthy' : s === 'critical' ? 'Critical' :
 function esc(x){return String(x??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 function pill(s){return `<span class="pill ${s}">${label(s)}</span>`}
 function hStatus(s){return s === 'pass' ? 'healthy' : s === 'fail' ? 'critical' : s === 'warn' ? 'warning' : 'unknown'}
+function severityStatus(s){return s === 'P0' || s === 'P1' ? 'critical' : s === 'P2' ? 'warning' : 'healthy'}
+function bars(items){const max=Math.max(...items.map(x=>Number(x[1]||0)),1);return items.map(([name,val])=>`<div class="bar-row"><span>${esc(name)}</span><div class="bar"><i style="width:${Math.max(4,Number(val||0)/max*100)}%"></i></div><strong>${esc(val)}</strong></div>`).join('')}
+async function loadSupportDigest(){
+  try{
+    const res = await fetch('/api/support-digest'); const d = await res.json();
+    const s = d.summary || {};
+    $('support-summary').innerHTML = d.ok ? `<div class="support-kpis"><div><span>Rows</span><strong>${esc(s.row_count||0)}</strong></div><div><span>Sample count</span><strong>${esc(s.sample_count||0)}</strong></div><div><span>Source</span><strong>${esc(d.tab||'—')}</strong></div><div><span>Updated</span><strong>${esc(new Date(d.generated_at).toLocaleString())}</strong></div></div>` : `<p class="detail">${esc(d.error||'No support digest data')}</p>`;
+    $('support-charts').innerHTML = `<div><h3>Severity</h3>${bars(s.severity||[])}</div><div><h3>Services</h3>${bars(s.service||[])}</div>`;
+    const rows = (d.rows||[]).slice(0,8);
+    $('support-rows').innerHTML = rows.length ? `<div class="row support-head"><span>Severity</span><span>Service</span><span>Candidate</span><span>Count</span></div>` + rows.map(r=>`<div class="row support-row"><span>${pill(severityStatus(r.severity)).replace('Healthy',esc(r.severity)).replace('Warning',esc(r.severity)).replace('Critical',esc(r.severity))}</span><strong>${esc(r.service)}</strong><span>${esc(r.incident_candidate)}<br><small>${esc(r.error_signature)}</small></span><span>${esc(r.count_sampled)}</span></div>`).join('') : '<p class="muted">No digest rows yet.</p>';
+  }catch(e){$('support-summary').innerHTML = `<p class="detail">Support digest load failed: ${esc(e.message)}</p>`}
+}
 async function load(){
   const res = await fetch('/api/status'); const d = await res.json();
   $('updated').textContent = new Date(d.generatedAt).toLocaleString();
@@ -22,6 +34,7 @@ async function load(){
   $('docker').innerHTML = d.docker.length ? `<div class="row head"><span>Name</span><span>Status</span><span>Ports</span></div>` + d.docker.map(r=>`<div class="row"><strong>${esc(r.name)}</strong><span>${esc(r.status)}</span><span class="muted">${esc(r.ports)}</span></div>`).join('') : '<p class="muted">No Docker containers visible, or Docker not running.</p>';
   $('roadmap').innerHTML = d.roadmap.map(x=>`<li>${esc(x)}</li>`).join('');
   $('raw').textContent = d.raw.openclawStatus;
+  loadSupportDigest();
 }
 $('refresh').addEventListener('click', load);
 load(); setInterval(load, 30000);

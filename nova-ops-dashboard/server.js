@@ -10,6 +10,9 @@ const WORKSPACE = '/Users/nova/.openclaw/workspace';
 const PORT = Number(process.env.NOVA_OPS_PORT || 18888);
 const OPENCLAW = '/opt/homebrew/bin/openclaw';
 const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
+const SUPPORT_DIGEST_EXPORT = path.join(WORKSPACE, 'grafana-dashboards', 'export_support_digest_data.py');
+const SUPPORT_DIGEST_JSON = path.join(PUBLIC, 'data', 'support_digest.json');
+const PY_GOOGLE = path.join(WORKSPACE, '.venv-google', 'bin', 'python');
 
 function run(cmd, args = [], timeout = 15000, options = {}) {
   return new Promise(resolve => {
@@ -44,6 +47,18 @@ async function collectHarness() {
     return parsed;
   }
   catch (e) { return { overall: h.ok ? 'warning' : 'critical', failed: h.ok ? 0 : 1, warned: h.ok ? 1 : 0, checks: [], error: `Could not parse harness JSON: ${e.message}; ${h.output || 'no output'}` }; }
+}
+
+async function collectSupportDigest(refresh = false) {
+  if (refresh) {
+    await run(PY_GOOGLE, [SUPPORT_DIGEST_EXPORT], 120000);
+  }
+  try {
+    const raw = await fsp.readFile(SUPPORT_DIGEST_JSON, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return { ok: false, error: `support digest unavailable: ${e.message}`, rows: [], summary: {} };
+  }
 }
 
 async function collect() {
@@ -139,6 +154,11 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/harness') {
     try { send(res, 200, 'application/json', JSON.stringify(await collectHarness())); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/support-digest') {
+    try { send(res, 200, 'application/json', JSON.stringify(await collectSupportDigest(url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
   const file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
