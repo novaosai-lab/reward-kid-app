@@ -61,12 +61,15 @@ def check_guard():
 
 
 def check_dashboard():
+    if os.environ.get('NOVA_HARNESS_SKIP_DASHBOARD') == '1':
+        return Check('dashboard.api', 'pass', 'skipped for dashboard self-collection', 0)
     t=time.time()
     try:
-        with urllib.request.urlopen(DASH_URL, timeout=20) as r:
+        ping_url = DASH_URL.replace('/api/status', '/api/ping')
+        with urllib.request.urlopen(ping_url, timeout=8) as r:
             data=json.loads(r.read().decode())
-        overall=data.get('overall')
-        return Check('dashboard.api', 'pass' if overall=='healthy' else 'warn', f"overall={overall}; services={','.join(s.get('status','?') for s in data.get('services',[]))}", int((time.time()-t)*1000))
+        ok=data.get('ok') is True
+        return Check('dashboard.api', 'pass' if ok else 'warn', f"ping={ok}; service={data.get('service','unknown')}", int((time.time()-t)*1000))
     except Exception as e:
         return Check('dashboard.api', 'fail', str(e), int((time.time()-t)*1000))
 
@@ -100,10 +103,26 @@ def check_tts_dry():
 
 
 def check_cron_commute():
-    ok,out,ms=run([OPENCLAW,'cron','list'],20)
+    ok,out,ms=run([OPENCLAW,'cron','list','--json','--all'],30)
     if not ok: return Check('cron.jobs','fail',out[-500:],ms)
-    found=('commute:true-digital-park:weekday-0800' in out) or ('commute:true-digital-' in out and '7953044c-5329-4733-bb88-c42ef22880a6' in out)
-    return Check('cron.jobs','pass' if found else 'warn','commute job found' if found else 'commute job not found',ms)
+    try:
+        data=json.loads(out)
+        jobs=data.get('jobs',[])
+        job=next((j for j in jobs if j.get('name')=='commute:true-digital-park:weekday-0800'), None)
+        if not job:
+            return Check('cron.jobs','warn','commute job not found',ms)
+        delivery=job.get('delivery') or {}
+        msg=((job.get('payload') or {}).get('message') or '')
+        sends_status='Send a short morning commute status every weekday' in msg
+        no_reply_guard='Do not output NO_REPLY unless live traffic and weather both cannot be checked' in msg
+        telegram=delivery.get('channel')=='telegram' and bool(delivery.get('to'))
+        enabled=bool(job.get('enabled'))
+        good=enabled and telegram and sends_status and no_reply_guard
+        detail=f"enabled={enabled}; telegram={telegram}; daily_status={sends_status}; no_reply_guard={no_reply_guard}"
+        return Check('cron.commute.policy', 'pass' if good else 'warn', detail, ms)
+    except Exception as e:
+        found=('commute:true-digital-park:weekday-0800' in out) or ('commute:true-digital-' in out and '7953044c-5329-4733-bb88-c42ef22880a6' in out)
+        return Check('cron.commute.policy','pass' if found else 'warn',f'json parse issue: {e}; text_found={found}',ms)
 
 
 def check_policy():

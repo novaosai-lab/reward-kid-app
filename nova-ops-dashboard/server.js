@@ -9,10 +9,11 @@ const PUBLIC = path.join(ROOT, 'public');
 const WORKSPACE = '/Users/nova/.openclaw/workspace';
 const PORT = Number(process.env.NOVA_OPS_PORT || 18888);
 const OPENCLAW = '/opt/homebrew/bin/openclaw';
+const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
 
-function run(cmd, args = [], timeout = 15000) {
+function run(cmd, args = [], timeout = 15000, options = {}) {
   return new Promise(resolve => {
-    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024, env: { ...process.env, ...(options.env || {}) } }, (error, stdout, stderr) => {
       resolve({ ok: !error, code: error?.code ?? 0, output: `${stdout || ''}${stderr ? '\n' + stderr : ''}`.trim() });
     });
   });
@@ -35,8 +36,18 @@ function statusFromText(text, failWords = ['failed', 'unreachable', 'not running
   return 'warning';
 }
 
+async function collectHarness() {
+  const h = await run(HARNESS, ['check', '--json', '--no-tts'], 240000, { env: { NOVA_HARNESS_SKIP_DASHBOARD: '1' } });
+  try {
+    const parsed = JSON.parse(h.output);
+    if (!h.ok && !parsed.error) parsed.error = 'harness reported failure';
+    return parsed;
+  }
+  catch (e) { return { overall: h.ok ? 'warning' : 'critical', failed: h.ok ? 0 : 1, warned: h.ok ? 1 : 0, checks: [], error: `Could not parse harness JSON: ${e.message}; ${h.output || 'no output'}` }; }
+}
+
 async function collect() {
-  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker] = await Promise.all([
+  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker, harness] = await Promise.all([
     run(OPENCLAW, ['status'], 25000),
     run(OPENCLAW, ['gateway', 'health'], 15000),
     run(OPENCLAW, ['gateway', 'status'], 15000),
@@ -44,6 +55,7 @@ async function collect() {
     run(OPENCLAW, ['tasks', 'list'], 15000),
     run(OPENCLAW, ['cron', 'list'], 15000),
     run('/usr/local/bin/docker', ['ps', '--format', '{{.Names}}|{{.Status}}|{{.Ports}}'], 8000),
+    collectHarness(),
   ]);
 
   let docker2 = docker;
@@ -78,7 +90,7 @@ async function collect() {
 
   return {
     generatedAt: new Date().toISOString(),
-    overall: services.some(s => s.status === 'critical') ? 'critical' : services.some(s => s.status === 'warning') ? 'warning' : 'healthy',
+    overall: services.some(s => s.status === 'critical') || harness.overall === 'fail' ? 'critical' : services.some(s => s.status === 'warning') || harness.overall === 'warn' ? 'warning' : 'healthy',
     summary: {
       sessions: sessionsMatch?.[1]?.trim() || 'see raw status',
       tasks: tasksMatch?.[1]?.trim() || (tasks.ok ? 'task command ok' : 'task command unavailable'),
@@ -97,12 +109,13 @@ async function collect() {
       nodeStatus: nodeStatus.output,
     },
     guard: { recent: guardLog.slice(-12).reverse(), restarts: restarts.reverse() },
+    harness,
     roadmap: [
       'Read-only dashboard live MVP',
-      'Add authenticated admin actions with explicit confirmation',
+      'Harness results visible in dashboard GUI',
       'Add n8n workflow execution/error API integration',
       'Add incident timeline and weekly ops report export',
-      'Add Telegram alerting for critical Guard events'
+      'Add authenticated admin actions only with explicit confirmation + audit log'
     ]
   };
 }
@@ -114,8 +127,17 @@ function send(res, code, type, body) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === '/api/ping') {
+    send(res, 200, 'application/json', JSON.stringify({ ok: true, service: 'nova-ops-dashboard', generatedAt: new Date().toISOString() }));
+    return;
+  }
   if (url.pathname === '/api/status') {
     try { send(res, 200, 'application/json', JSON.stringify(await collect())); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/harness') {
+    try { send(res, 200, 'application/json', JSON.stringify(await collectHarness())); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
