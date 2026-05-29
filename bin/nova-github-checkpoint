@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="${1:-/Users/nova/.openclaw/workspace}"
+remote="${NOVA_CHECKPOINT_REMOTE:-origin}"
+branch="${NOVA_CHECKPOINT_BRANCH:-main}"
+mode="${NOVA_CHECKPOINT_MODE:-tracked-only}"
+dry_run="${NOVA_CHECKPOINT_DRY_RUN:-0}"
+
+cd "$repo"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "[blocked] not a git repository: $repo"
+  exit 2
+fi
+
+current_branch="$(git branch --show-current)"
+if [[ "$current_branch" != "$branch" ]]; then
+  echo "[blocked] expected branch $branch, got ${current_branch:-detached}"
+  exit 2
+fi
+
+git fetch --quiet "$remote" "$branch"
+local_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse "$remote/$branch")"
+base_sha="$(git merge-base HEAD "$remote/$branch")"
+if [[ "$local_sha" != "$remote_sha" && "$base_sha" != "$remote_sha" ]]; then
+  echo "[blocked] local branch is behind/diverged from $remote/$branch; manual pull/rebase required"
+  exit 2
+fi
+
+if [[ "$mode" != "tracked-only" ]]; then
+  echo "[blocked] unsupported checkpoint mode: $mode"
+  exit 2
+fi
+
+git reset --quiet
+git add -u
+
+if git diff --cached --quiet; then
+  untracked_count="$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')"
+  echo "NO_CHANGES tracked changes=0 untracked=$untracked_count"
+  exit 0
+fi
+
+blocked_paths="$(git diff --cached --name-only | rg -i '(^|/)(\\.env|.*secret.*|.*token.*|.*credential.*|MEMORY\\.md|USER\\.md|TOOLS\\.md|HEARTBEAT\\.md)$|(^|/)(memory|Nick|logs|tmp|reports|downloads|artifacts)/' || true)"
+if [[ -n "$blocked_paths" ]]; then
+  echo "[blocked] staged paths include private/runtime files:"
+  echo "$blocked_paths"
+  git reset --quiet
+  exit 2
+fi
+
+secret_hits="$(git diff --cached -- . ':(exclude)package-lock.json' | rg -i '(gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----|(?:api[_-]?key|token|secret|password|passwd)\\s*[:=]\\s*['\''\"]?[A-Za-z0-9_./+=-]{16,})' || true)"
+if [[ -n "$secret_hits" ]]; then
+  echo "[blocked] staged diff matched secret-like patterns"
+  git reset --quiet
+  exit 2
+fi
+
+summary="$(git diff --cached --stat)"
+echo "$summary"
+
+if [[ "$dry_run" == "1" ]]; then
+  echo "DRY_RUN staged tracked changes only; no commit/push"
+  git reset --quiet
+  exit 0
+fi
+
+stamp="$(date '+%Y-%m-%d %H:%M %Z')"
+git commit -m "chore(checkpoint): daily workspace checkpoint ${stamp}"
+git push "$remote" "$branch"
+echo "PUSHED checkpoint to $remote/$branch"
