@@ -20,8 +20,8 @@ Local TTS/voice-cloning sandbox for Nova using `k2-fsa/OmniVoice`.
 ## Supported voice design examples
 Use only supported OmniVoice instruct tokens, comma + space separated:
 
-- `female, young adult, low pitch` ← current Nova default / Sample 1
-- `female, young adult, moderate pitch`
+- `female, young adult, low pitch` ← previous default / Sample 1
+- `female, young adult, moderate pitch` ← current Nova default after Nick's listening test (speed `0.94`, quality step `32`)
 - `female, young adult, high pitch`
 - `female, low pitch`
 - `female, british accent`
@@ -59,6 +59,7 @@ Modes are stored in `/Users/nova/.openclaw/workspace/nova-voice/state.json`.
 /Users/nova/.openclaw/workspace/nova-voice/nova-voice-mode set auto
 /Users/nova/.openclaw/workspace/nova-voice/nova-voice-mode set off
 /Users/nova/.openclaw/workspace/nova-voice/nova-voice-mode tone 'female, young adult, moderate pitch'
+/Users/nova/.openclaw/workspace/nova-voice/nova-voice-mode profile 'female, young adult, moderate pitch' --speed 0.94 --num-step 32
 ```
 
 Policy-aware sending:
@@ -95,3 +96,35 @@ openclaw message send --channel telegram --target 8613255279 --media output/nova
 1. Add dashboard panel for voice mode/status.
 2. Add slash-command routing (`/voice on`, `/voice off`, `/voice auto`) if needed.
 3. Add per-chat voice preferences if more users/channels are added.
+
+## Quality baseline
+
+Before replacing STT or TTS engines, run a local Thai round-trip baseline:
+
+```bash
+python3 /Users/nova/.openclaw/workspace/nova-voice/benchmark_roundtrip.py --num-step 8
+```
+
+This generates speech locally, transcribes it through the current STT engine, and reports latency plus normalized transcript similarity. It is a smoke baseline; evaluate STT improvements against consented real inbound voice notes as well.
+
+### MLX accuracy challenger
+
+An isolated candidate wrapper is available without changing the active Telegram STT route:
+
+```bash
+/Users/nova/.openclaw/workspace/nova-voice/nova-transcribe-mlx /path/to/audio.ogg
+```
+
+It uses local `mlx-community/whisper-large-v3-turbo` with a short Thai/Nova glossary prompt. Initial benchmark showed improved recognition for `พี่นิค`, `โนวา`, and `รับส่งเสียง`, but slower runtime than current `whisper.cpp small`; keep it as an accuracy challenger until a larger real-sample A/B set is reviewed.
+
+### Thai TTS challenger
+
+An isolated Thai-specific comparison engine is available without changing active OmniVoice replies:
+
+```bash
+/Users/nova/.openclaw/workspace/nova-voice/nova-voice-thai \
+  --output output/tts-ab/vachana-test.wav \
+  'สวัสดีค่ะพี่นิค โนวากำลังทดสอบเสียงภาษาไทยค่ะ'
+```
+
+It uses PyThaiTTS Vachana `th_f_1`. Initial local comparison was faster and more intelligible on a Thai sample than the current cold OmniVoice path, but the speaking character is different; require Nick's listening preference before any active default change.

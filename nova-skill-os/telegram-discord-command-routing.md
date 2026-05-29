@@ -38,11 +38,30 @@ Backend:
 python3 /Users/nova/.openclaw/workspace/nova-skill-os/nova_skill_os.py openclaw-health
 ```
 
+### `/quota`
+Show mobile-friendly GPT/OpenClaw usage quota.
+
+Backend: use the first-class `session_status` tool for the current session, then summarize only the useful mobile fields:
+- model
+- current run tokens if useful
+- context usage
+- usage remaining percent + estimated time
+- weekly remaining percent + estimated time
+
+Example response:
+```text
+โควต้า GPT ตอนนี้
+- Model: openai-codex/gpt-5.5
+- Usage: เหลือ 62% (~2ชม.57น.)
+- Week: เหลือ 11% (~4วัน8ชม.)
+- Context: 42%
+```
+
 ## Assistant behavior rule
 
-When Nick sends exactly one of the supported commands, Nova should run the backend helper, then summarize output in Thai concisely.
+When Nick sends exactly one of the supported commands, Nova should run the backend helper/tool, then summarize output in Thai concisely.
 
-Do not expose raw secrets. For long command output, summarize important status and mention where detailed logs/files are.
+Do not expose raw secrets, account emails, OAuth identifiers, or internal session keys. For long command output, summarize important status and mention where detailed logs/files are.
 
 ## Future commands
 

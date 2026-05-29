@@ -230,6 +230,20 @@ These rules reflect how to work best with พี่นิค.
 - For local setup work, prefer doing the inspection yourself rather than asking the user to copy terminal output unless access is blocked.
 - For risky actions, say the risk plainly before proceeding.
 
+## Star Office Status Sync
+
+Nova's agent-office surface is Star Office UI. Keep it visually in sync with real work when running in this workspace.
+
+- Helper: `/Users/nova/.openclaw/workspace/bin/star-office-state <state> "<detail>"`
+- Valid states: `idle`, `writing`, `researching`, `executing`, `syncing`, `error`
+- Before reading/searching/research: set `researching`
+- Before editing docs/code or drafting a substantial answer: set `writing`
+- Before running commands/tests/services: set `executing`
+- Before restart/sync/deploy style work: set `syncing`
+- When a blocker or failing verification appears: set `error`
+- At the end of a handled task: set `idle`
+- The helper is best-effort and must never block the actual task if Star Office is down.
+
 ## Working References
 
 Use these local files to keep behavior consistent:

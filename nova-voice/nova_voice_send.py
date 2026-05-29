@@ -23,7 +23,12 @@ def load_state() -> dict:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return {"mode": "auto", "defaultInstruct": "female, young adult, low pitch"}
+        return {
+            "mode": "auto",
+            "defaultInstruct": "female, young adult, moderate pitch",
+            "defaultSpeed": 0.94,
+            "defaultNumStep": 32,
+        }
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -37,7 +42,8 @@ def main() -> int:
     p.add_argument("--reply-to", help="Telegram message id to reply to")
     p.add_argument("--caption", default="", help="Optional message caption")
     p.add_argument("--instruct", help="Voice design instruction; defaults to state.json defaultInstruct")
-    p.add_argument("--num-step", default="16")
+    p.add_argument("--speed", type=float, help="Speech speed; defaults to state.json defaultSpeed")
+    p.add_argument("--num-step", type=int, help="Diffusion steps; defaults to state.json defaultNumStep")
     p.add_argument("--respect-mode", action="store_true", help="Skip sending when voice mode is off")
     p.add_argument("--context", choices=["text", "voice", "manual"], default="manual", help="Input context for auto mode")
     p.add_argument("--dry-run", action="store_true")
@@ -55,11 +61,13 @@ def main() -> int:
             return 0
 
     instruct = args.instruct or state.get("defaultInstruct") or "female, young adult, low pitch"
+    speed = args.speed if args.speed is not None else float(state.get("defaultSpeed", 0.94))
+    num_step = args.num_step if args.num_step is not None else int(state.get("defaultNumStep", 32))
 
     wav = ROOT / "output" / "nova-reply.wav"
     ogg = ROOT / "output" / "nova-reply.ogg"
 
-    gen = run([str(NOVA_VOICE), "--instruct", instruct, "--num-step", str(args.num_step), "--output", str(wav), args.text])
+    gen = run([str(NOVA_VOICE), "--instruct", instruct, "--speed", str(speed), "--num-step", str(num_step), "--output", str(wav), args.text])
     if gen.returncode != 0:
         sys.stderr.write(gen.stdout + gen.stderr)
         return gen.returncode

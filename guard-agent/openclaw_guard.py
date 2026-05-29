@@ -24,6 +24,7 @@ OPENCLAW = "/opt/homebrew/bin/openclaw"
 WINDOW_SECONDS = 30 * 60
 MAX_RESTARTS_PER_WINDOW = 2
 CMD_TIMEOUT = 25
+TELEGRAM_STALE_SECONDS = 15 * 60
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,6 +88,65 @@ def restart(service: str, cmd: list[str], reason: str, state: dict):
     log("restart_done", service=service, ok=ok, output=out)
 
 
+def check_telegram_channel(state: dict):
+    ok, out = run([OPENCLAW, "channels", "status", "--channel", "telegram", "--json"])
+    if not ok:
+        log("telegram_status_error", ok=ok, output=out)
+        restart("gateway", [OPENCLAW, "gateway", "restart"], "telegram channel status failed", state)
+        return
+
+    try:
+        status = json.loads(out)
+    except Exception as exc:
+        log("telegram_status_parse_error", error=str(exc), output=out[-1200:])
+        return
+
+    channel = status.get("channels", {}).get("telegram", {})
+    accounts = status.get("channelAccounts", {}).get("telegram", [])
+    default_account = next((a for a in accounts if a.get("accountId") == "default"), accounts[0] if accounts else {})
+    now_ms = int(time.time() * 1000)
+    last_activity_ms = int(default_account.get("lastTransportActivityAt") or 0)
+    stale_seconds = int((now_ms - last_activity_ms) / 1000) if last_activity_ms else None
+
+    unhealthy_reasons: list[str] = []
+    if not channel.get("configured"):
+        unhealthy_reasons.append("channel_not_configured")
+    if not channel.get("running"):
+        unhealthy_reasons.append("channel_not_running")
+    if channel.get("lastError"):
+        unhealthy_reasons.append("channel_last_error")
+    if not default_account:
+        unhealthy_reasons.append("default_account_missing")
+    else:
+        if not default_account.get("configured"):
+            unhealthy_reasons.append("account_not_configured")
+        if not default_account.get("running"):
+            unhealthy_reasons.append("account_not_running")
+        if not default_account.get("connected"):
+            unhealthy_reasons.append("account_not_connected")
+        if default_account.get("restartPending"):
+            unhealthy_reasons.append("restart_pending")
+        if default_account.get("lastError"):
+            unhealthy_reasons.append("account_last_error")
+        if stale_seconds is not None and stale_seconds > TELEGRAM_STALE_SECONDS:
+            unhealthy_reasons.append(f"transport_stale_{stale_seconds}s")
+
+    log(
+        "telegram_channel_check",
+        ok=not unhealthy_reasons,
+        reasons=unhealthy_reasons,
+        channel_running=channel.get("running"),
+        account_running=default_account.get("running") if default_account else None,
+        account_connected=default_account.get("connected") if default_account else None,
+        stale_seconds=stale_seconds,
+        last_inbound_at=default_account.get("lastInboundAt") if default_account else None,
+        last_outbound_at=default_account.get("lastOutboundAt") if default_account else None,
+    )
+
+    if unhealthy_reasons:
+        restart("gateway", [OPENCLAW, "gateway", "restart"], "telegram unhealthy: " + ",".join(unhealthy_reasons), state)
+
+
 def main():
     state = load_state()
 
@@ -112,6 +172,8 @@ def main():
     if not node_ok:
         restart("node", [OPENCLAW, "node", "restart"], "node status failed", state)
         time.sleep(5)
+
+    check_telegram_channel(state)
 
     # Post-recovery verification, payload-light.
     final_ok, final_out = run([OPENCLAW, "status"], timeout=35)

@@ -3,6 +3,8 @@
 Date: 2026-05-15
 Inspired by safe patterns observed in thClaws, adapted for the current OpenClaw/Nova setup. This is not a thClaws install plan; it is an OpenClaw-native architecture map.
 
+Related guide: docs/nova-nested-architecture.md defines the nested layer model for safely adapting ideas from Hermes, Superpowers, Anthropic skills, and other agent systems without replacing the OpenClaw production core.
+
 ## Principle
 
 Nova should keep one operational truth across many surfaces:
@@ -17,6 +19,47 @@ Nova should keep one operational truth across many surfaces:
 - Skills/playbooks/prompts
 
 The dashboard should observe; harness should verify; guard should recover; cron should schedule; OpenClaw sessions should execute.
+
+Nova is best understood as an intelligence layer across multiple surfaces, not a single chatbot. The model is only one part of the system; durable value comes from the coordination between memory, tools, orchestration, and delivery surfaces.
+
+## Platform layers
+
+```text
+[Interfaces]
+Telegram · Android app · Dashboard · Voice · Future web surfaces
+        |
+[Orchestration]
+OpenClaw sessions · Cron · Subagents · Skills · Prompts
+        |
+[Capabilities]
+MCP/tools · n8n · Browser · Grafana · Local services · Bridges
+        |
+[Memory]
+Profile · project state · daily notes · durable lessons · transcripts
+        |
+[Operations]
+Guard · Harness · logs · health checks · rollback/checkpoints
+```
+
+### Interface layer
+- Human-facing surfaces for different contexts.
+- Telegram is current primary surface; Nova Assistant Android app is becoming the mobile surface; Dashboard remains observability-first.
+
+### Orchestration layer
+- Routes intent to the right execution path.
+- Includes OpenClaw sessions, cron, specialist prompts, skills, and future task routers.
+
+### Capability layer
+- Standardized access to tools and external systems.
+- Prefer MCP/tool contracts and bridges over hard-coded one-off calls.
+
+### Memory layer
+- Preserves continuity and context across sessions.
+- Must separate durable memory from transient context and sensitive raw logs.
+
+### Operations layer
+- Keeps Nova reliable, observable, and recoverable.
+- Guard recovers, Harness verifies, Dashboard observes, checkpoints preserve rollback paths.
 
 ## Current components
 
@@ -63,6 +106,8 @@ Admin buttons may exist visually, but should remain disabled until there is auth
 3. Add cron delivery checks for important scheduled jobs.
 4. Add read-only GitHub checkpoint status to dashboard.
 5. Consider Nova Skill OS frontmatter catalog + lazy-load validation.
+6. Treat Telegram, Android app, and Dashboard as multiple surfaces of one system, not separate products.
+7. Publish a maintained skill/tool registry for discoverability and ownership.
 
 ## Non-goals for now
 

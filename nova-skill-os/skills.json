@@ -9,6 +9,7 @@
     "outputs": ["triage", "risk summary", "RCA draft", "follow-up actions"],
     "risk_level": "medium",
     "requires_approval": false,
+    "source_files": ["skills/support-engineering/SKILL.md", "skills/incident-manager/SKILL.md", "prompts/support-engineering-specialist.md", "prompts/incident-manager-specialist.md"],
     "status": "active"
   },
   {
@@ -34,6 +35,7 @@
     "outputs": ["health report", "fix recommendation", "safe restart"],
     "risk_level": "medium",
     "requires_approval": true,
+    "source_files": ["prompts/sre-specialist.md", "prompts/devops-specialist.md", "TOOLS.md"],
     "status": "active"
   },
   {
@@ -46,6 +48,7 @@
     "outputs": ["workflow JSON", "import checklist", "security notes"],
     "risk_level": "medium",
     "requires_approval": true,
+    "source_files": ["skills/n8n-openclaw-automation/SKILL.md", "skills/n8n-orchestration-pattern/SKILL.md", "playbooks/openclaw-n8n-webhook-boundary-checklist.md"],
     "status": "active"
   },
   {
@@ -58,6 +61,7 @@
     "outputs": ["morning brief", "evening brief", "BUY_ON_DCA/WAIT/AVOID_FOR_NOW research verdict"],
     "risk_level": "high",
     "requires_approval": false,
+    "source_files": ["skills/portfolio-manager/SKILL.md", "skills/us-stock-analysis/SKILL.md", "skills/trader-memory-core/SKILL.md"],
     "status": "active"
   },
   {
@@ -70,6 +74,7 @@
     "outputs": ["search results", "dashboard", "citations"],
     "risk_level": "low",
     "requires_approval": false,
+    "source_files": ["knowledge-wiki/wiki/index.md", "knowledge-wiki/wiki/log.md", "nova-skill-os/nova_skill_os.py"],
     "status": "active"
   },
   {
@@ -82,6 +87,7 @@
     "outputs": ["test evidence", "bug notes", "release risk"],
     "risk_level": "medium",
     "requires_approval": false,
+    "source_files": ["skills/mobile-app-testing/SKILL.md", "skills/webapp-testing/SKILL.md", "prompts/qa-specialist.md"],
     "status": "active"
   },
   {
@@ -94,6 +100,20 @@
     "outputs": ["Thai summary", "slide draft", "executive report"],
     "risk_level": "low",
     "requires_approval": false,
+    "source_files": ["skills/support-reporting/SKILL.md", "skills/support-report-to-slides/SKILL.md", "skills/morning-briefing/SKILL.md"],
     "status": "active"
+  },
+  {
+    "id": "repo-reader-cheap",
+    "name_th": "Repo Reader Cheap",
+    "name_en": "Repo Reader Cheap",
+    "category": "research",
+    "description": "Low-cost read-only first-pass public repo review using sanitized repo packs and a strict no-private-data boundary.",
+    "triggers": ["public repo", "อ่าน repo", "cheap subagent", "free LLM", "repo review"],
+    "outputs": ["repo summary", "adapt/watch/skip verdict", "risk notes", "Nova adaptation recommendation"],
+    "risk_level": "low",
+    "requires_approval": false,
+    "source_files": ["prompts/repo-reader-cheap-specialist.md", "bin/nova-cheap-repo-reader", "research/free-llm-provider-allowlist.md", "bin/nova-pack-repo"],
+    "status": "draft"
   }
 ]

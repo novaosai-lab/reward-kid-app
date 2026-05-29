@@ -1,6 +1,8 @@
 {
   "mode": "auto",
-  "defaultInstruct": "female, young adult, low pitch",
-  "updatedAt": "2026-05-14T17:43:30+07:00",
+  "defaultInstruct": "female, young adult, moderate pitch",
+  "defaultSpeed": 0.94,
+  "defaultNumStep": 32,
+  "updatedAt": "2026-05-25T19:10:28+07:00",
   "updatedBy": "nick"
 }

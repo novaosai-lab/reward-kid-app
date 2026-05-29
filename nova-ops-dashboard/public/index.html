@@ -3,53 +3,690 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Nova Ops Dashboard</title>
+  <title>Nova Ops Dashboard • Tactical Command Center</title>
+  <meta name="theme-color" content="#02040a" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <div class="orb orb-a"></div><div class="orb orb-b"></div>
-  <header class="topbar">
-    <div><div class="eyebrow">OpenClaw Multi-Agent Command Center</div><h1>Nova Ops Dashboard</h1></div>
-    <div class="top-actions"><span id="updated" class="muted">Loading…</span><button id="refresh">Refresh</button></div>
-  </header>
+  <!-- Sci-Fi Ambient Backdrops -->
+  <div class="grid-backdrop"></div>
+  <div class="scanline"></div>
+  
+  <div class="app-container">
+    <!-- Left Sidebar Menu -->
+    <aside class="sidebar" aria-label="Tactical Navigation">
+      <div class="brand">
+        <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
+        <h1>Nova Ops <span class="version-badge">v1.3.0</span></h1>
+      </div>
+      
+      <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
+        <button class="tab-btn active" data-tab="telemetry">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">⚡</span>
+          <span>Core Telemetry</span>
+        </button>
+        <button class="tab-btn" data-tab="integrations">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">🔗</span>
+          <span>Integrations</span>
+        </button>
+        <button class="tab-btn" data-tab="quality">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">🛡️</span>
+          <span>Quality & Quota</span>
+        </button>
+        <button class="tab-btn" data-tab="jobs">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">⏱</span>
+          <span>Jobs & Runs</span>
+        </button>
+        <button class="tab-btn" data-tab="system">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">⚙️</span>
+          <span>System Docs</span>
+        </button>
+      </nav>
+      
+      <div class="theme-selector">
+        <span class="theme-label">HUD Color Profile</span>
+        <div class="theme-dots">
+          <button class="theme-dot active" data-theme="cyan" style="background: #00f0ff;" title="Jarvis Cyan" aria-label="Switch HUD theme to Jarvis Cyan"></button>
+          <button class="theme-dot" data-theme="gold" style="background: #ff9a00;" title="Armor Gold" aria-label="Switch HUD theme to Armor Gold"></button>
+          <button class="theme-dot" data-theme="red" style="background: #ff4766;" title="Tactical Red" aria-label="Switch HUD theme to Tactical Red"></button>
+          <button class="theme-dot" data-theme="green" style="background: #00ffaa;" title="Toxic Green" aria-label="Switch HUD theme to Toxic Green"></button>
+        </div>
+      </div>
+      
+      <div class="sidebar-footer">
+        <span class="security-status"><span class="dot healthy"></span> SECURE MODE</span>
+        <span class="muted">Read-Only Telemetry Ingress</span>
+      </div>
+    </aside>
 
-  <main>
-    <section class="hero card">
-      <div>
-        <div class="eyebrow">Overall posture</div>
-        <div class="status-line"><span id="overall-dot" class="dot"></span><span id="overall">Collecting telemetry</span></div>
-        <p>Read-only control center for Nova Main Agent, Guard Watchdog, OpenClaw services, channels, tasks, cron and local workflow surface.</p>
-      </div>
-      <div class="agent-map">
-        <div class="node main">Nova<br><small>Main Worker</small></div>
-        <div class="link"></div>
-        <div class="node guard">Guard<br><small>Admin Watchdog</small></div>
-      </div>
-    </section>
+    <!-- Main Content Area -->
+    <div class="main-content">
+      <header class="topbar">
+        <div class="search-container">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="search-input" placeholder="Search operational intelligence..." autocomplete="off">
+        </div>
 
-    <section class="metrics grid4">
-      <div class="metric card"><span>Sessions</span><strong id="m-sessions">—</strong></div>
-      <div class="metric card"><span>Tasks</span><strong id="m-tasks">—</strong></div>
-      <div class="metric card"><span>Heartbeat</span><strong id="m-heartbeat">—</strong></div>
-      <div class="metric card"><span>Guard restarts</span><strong id="m-restarts">—</strong></div>
-    </section>
+        <div class="top-actions">
+          <div class="telemetry-status">
+            <span class="muted">Updated:</span>
+            <span id="updated" class="status-timestamp">Loading…</span>
+            <span id="status-freshness" class="freshness loading">Checking freshness</span>
+          </div>
+          <button id="focus-toggle" class="icon-btn focus-toggle" type="button" title="Toggle Focus Mode (Reduce Motion)" aria-label="Toggle Focus Mode (Reduce Motion)">
+            <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; transform: scale(1.1);"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>Focus Mode</span>
+          </button>
+          <button id="sound-toggle" class="icon-btn sound-toggle" type="button" title="Play Nova introduction">
+            <svg class="sound-icon sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 5a9 9 0 0 1 0 14"></path></svg>
+            <span>Intro</span>
+          </button>
+          <button id="refresh">
+            <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+            Sync Telemetry
+          </button>
+        </div>
+      </header>
 
-    <section class="layout">
-      <div class="left">
-        <div class="card"><div class="section-head"><h2>Service Health</h2><span>Gateway · Node · Guard · Channels</span></div><div id="services" class="service-list"></div></div>
-        <div class="card"><div class="section-head"><h2>Support Digest Dashboard</h2><span>Google Sheets → Nova web dashboard, no Grafana dependency</span></div><div id="support-summary" class="support-summary"></div><div id="support-charts" class="support-charts"></div><div id="support-rows" class="table compact"></div></div>
-        <div class="card"><div class="section-head"><h2>Harness Quality Gate</h2><span>Scenario checks before trusting automations</span></div><div id="harness-summary" class="harness-summary"></div><div id="harness" class="check-list"></div></div>
-        <div class="card"><div class="section-head"><h2>Guard Timeline</h2><span>Latest watchdog checks and recovery events</span></div><div id="guard" class="timeline"></div></div>
-        <div class="card"><div class="section-head"><h2>Local Workflow Surface</h2><span>Docker/n8n containers if available</span></div><div id="docker" class="table"></div></div>
+      <main>
+        <section class="hero card glow-cyan">
+          <div class="hero-content">
+            <div class="eyebrow">Overall Posture</div>
+            <div class="status-line">
+              <span id="overall-dot" class="dot loading"></span>
+              <span id="overall">Collecting Telemetry</span>
+            </div>
+            <p>Operational command center for verified gateway health, guard events, alert pathways, workflow evidence, and incident candidates. Secure read-only posture is active.</p>
+          </div>
+          
+          <div class="agent-map holo-display" aria-label="Holographic OpenClaw agent display">
+            <!-- Sci-fi Corner Brackets -->
+            <div class="cyber-bracket bracket-left"></div>
+            <div class="cyber-bracket bracket-right"></div>
+            
+            <!-- Jarvis HUD Diagnostics Overlay (Left side) -->
+            <div class="hud-panel hud-left" aria-hidden="true">
+              <div class="hud-data-row"><span class="hud-label">LOC</span><span class="hud-val">BK_TH:SYS</span></div>
+              <div class="hud-data-row"><span class="hud-label">COORDS</span><span class="hud-val">13.75N / 100.50E</span></div>
+              <div class="hud-data-row"><span class="hud-label">PING</span><span class="hud-val">NOT WIRED</span></div>
+              <div class="hud-data-row"><span class="hud-label">CPU_LOAD</span><span class="hud-val">NOT WIRED</span></div>
+            </div>
+            
+            <!-- Jarvis HUD Diagnostics Overlay (Right side) -->
+            <div class="hud-panel hud-right" aria-hidden="true">
+              <div class="hud-data-row"><span class="hud-label">STATUS</span><span class="hud-val text-green">ONLINE</span></div>
+              <div class="hud-data-row"><span class="hud-label">NODE_ID</span><span class="hud-val">N_040D_X</span></div>
+              <div class="hud-data-row"><span class="hud-label">MEM_USE</span><span class="hud-val">NOT WIRED</span></div>
+              <div class="hud-data-row"><span class="hud-label">SECURE</span><span class="hud-val text-cyan">R_ONLY</span></div>
+            </div>
+
+            <!-- Agent Node Grid (Main Worker and Guard Watchdog) -->
+            <div class="node-wrapper main-node-wrapper">
+              <div class="node main">
+                <span class="node-glow"></span>
+                <div class="node-radar-sweep"></div>
+                Nova
+                <small>Main Worker</small>
+              </div>
+              <!-- Node Tag HUD overlay -->
+              <div class="node-hud-tag tag-left">
+                <span>CORE_ENG</span>
+                <strong>SYS_OK</strong>
+              </div>
+            </div>
+            
+            <div class="link-wrapper link-left">
+              <div class="link"></div>
+              <span class="data-pulse"></span>
+              <span class="connection-wave"></span>
+            </div>
+            
+            <div class="holo-stage" aria-hidden="true" style="pointer-events: auto;">
+              <!-- Holographic Rotating Concentric HUD Rings -->
+              <div class="holo-hud-ring ring-outer"></div>
+              <div class="holo-hud-ring ring-middle"></div>
+              <div class="holo-hud-ring ring-inner"></div>
+              <!-- Glowing Aura behind Sphere -->
+              <div class="holo-core-glow"></div>
+              <div id="nova-3d-canvas-container" style="width: 100%; height: 100%;"></div>
+            </div>
+            
+            <div class="link-wrapper link-right">
+              <div class="link"></div>
+              <span class="data-pulse"></span>
+              <span class="connection-wave"></span>
+            </div>
+            
+            <div class="node-wrapper guard-node-wrapper">
+              <div class="node guard">
+                <span class="node-glow"></span>
+                <div class="node-radar-sweep"></div>
+                Guard
+                <small>Admin Watchdog</small>
+              </div>
+              <!-- Node Tag HUD overlay -->
+              <div class="node-hud-tag tag-right">
+                <span>SND_WDG</span>
+                <strong>ACTIVE</strong>
+              </div>
+            </div>
+            
+            <!-- Bottom Holographic Readout & Audio Visualizer -->
+            <div class="holo-readout" aria-hidden="true">
+              <div class="readout-left">
+                <span>Visual Core</span>
+                <strong>STATUS-BOUND ONLY</strong>
+              </div>
+              <!-- Speaking Voice visualizer wave -->
+              <div class="voice-visualizer">
+                <span class="voice-bar v-1"></span>
+                <span class="voice-bar v-2"></span>
+                <span class="voice-bar v-3"></span>
+                <span class="voice-bar v-4"></span>
+                <span class="voice-bar v-5"></span>
+                <span class="voice-bar v-6"></span>
+              </div>
+              <div class="readout-right">
+                <span>POSTURE</span>
+                <strong class="text-cyan">READ_ONLY</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="metrics grid4">
+          <div class="metric card glow-cyan">
+            <div class="metric-label">Sessions</div>
+            <strong id="m-sessions">—</strong>
+          </div>
+          <div class="metric card glow-purple">
+            <div class="metric-label">Tasks</div>
+            <strong id="m-tasks">—</strong>
+          </div>
+          <div class="metric card glow-emerald">
+            <div class="metric-label">Heartbeat</div>
+            <strong id="m-heartbeat">—</strong>
+          </div>
+          <div class="metric card glow-rose">
+            <div class="metric-label">Guard Restarts</div>
+            <strong id="m-restarts">—</strong>
+          </div>
+        </section>
+
+    <!-- Tab Panel: Core Telemetry -->
+    <div id="tab-telemetry" class="tab-panel active">
+      <div class="layout">
+        <div class="left">
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Service Health</h2>
+              <span>Gateway · Node · Guard · Channels</span>
+            </div>
+            <div id="services" class="service-list"></div>
+          </div>
+          
+          <div class="card card-tech" data-nova-id="alert-routes">
+            <div class="section-head">
+              <h2>Alert Routes</h2>
+              <span>Telegram · Discord · LINE · Google Chat · Browser</span>
+            </div>
+            <div id="alert-routes" class="alert-routes"></div>
+          </div>
+
+          <div class="card card-tech" data-nova-id="incident-radar">
+            <div class="section-head">
+              <h2>Incident Radar</h2>
+              <span id="incident-source">Support Evidence · Loading</span>
+            </div>
+            <div id="incident-radar" class="incident-radar"></div>
+          </div>
+
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Guard Timeline</h2>
+              <span>Latest Watchdog Checks & Recovery Events</span>
+            </div>
+            <div id="guard" class="timeline"></div>
+          </div>
+        </div>
+        
+        <div class="right">
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Channels</h2>
+              <span>Telegram / Discord</span>
+            </div>
+            <div id="channels" class="chips"></div>
+          </div>
+          
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Admin Actions</h2>
+              <span>Disabled Until Explicit Safety Layer</span>
+            </div>
+            <div class="actions">
+              <button disabled class="admin-btn">
+                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Restart Gateway
+              </button>
+              <button disabled class="admin-btn">
+                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Restart Node
+              </button>
+              <button disabled class="admin-btn">
+                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Run Deep Audit
+              </button>
+            </div>
+            <p class="muted admin-disclaimer">Next version can add actions with confirmation, auth token, rate limits and full audit logging.</p>
+          </div>
+          
+          <div class="card card-tech console-card">
+            <div class="section-head">
+              <h2>Diagnostic Console</h2>
+              <span>Live System Stream</span>
+            </div>
+            <div class="console-log-area" id="diagnostic-console">
+              <div class="console-line"><span class="log-time">[SYSTEM]</span> <span class="log-msg">Nova Command Interface initialized.</span></div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="right">
-        <div class="card"><div class="section-head"><h2>Channels</h2><span>Telegram / Discord</span></div><div id="channels" class="chips"></div></div>
-        <div class="card"><div class="section-head"><h2>Admin Actions</h2><span>Disabled until explicit safety layer</span></div><div class="actions"><button disabled>Restart Gateway</button><button disabled>Restart Node</button><button disabled>Run Deep Audit</button></div><p class="muted">Next version can add actions with confirmation, auth token, rate limits and full audit logging.</p></div>
-        <div class="card"><div class="section-head"><h2>Roadmap</h2><span>Full dashboard path</span></div><ol id="roadmap"></ol></div>
-        <details class="card raw"><summary>Raw OpenClaw Status</summary><pre id="raw">—</pre></details>
+    </div>
+    
+    <!-- Tab Panel: Integrations -->
+    <div id="tab-integrations" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech" data-nova-id="grafana-mcp">
+          <div class="section-head">
+            <h2>Grafana MCP</h2>
+            <span>Amaze · Phoenix · Read-only Bridge</span>
+          </div>
+          <div id="grafana-mcp" class="grafana-mcp"></div>
+        </div>
+        
+        <div class="card card-tech" data-nova-id="web-inventory">
+          <div class="section-head">
+            <h2>Web Inventory</h2>
+            <span>Public Routes · Local Ports · Paused Experiments</span>
+          </div>
+          <div id="web-inventory" class="web-inventory"></div>
+        </div>
+
+        <div class="card card-tech col-span-2">
+          <div class="section-head">
+            <h2>Local Workflow Surface</h2>
+            <span>Docker/n8n Containers If Available</span>
+          </div>
+          <div id="docker" class="table"></div>
+        </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="workflow-health">
+          <div class="section-head">
+            <h2>n8n Workflow Health</h2>
+            <span>Runtime Presence · Config Evidence · Execution Gap</span>
+          </div>
+          <div id="workflow-health" class="workflow-health"></div>
+        </div>
       </div>
-    </section>
+    </div>
+
+    <!-- Tab Panel: Quality & Quotas -->
+    <div id="tab-quality" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech" data-nova-id="codex-quota">
+          <div class="section-head">
+            <h2>Codex Quota Usage</h2>
+            <span>watit2004 · natty.jk · Local Session Logs</span>
+          </div>
+          <div id="codex-quota" class="codex-quota"></div>
+        </div>
+
+        <div class="card card-tech" data-nova-id="groq-quota">
+          <div class="section-head">
+            <h2>Groq Quota Usage</h2>
+            <span>Cheap Repo Reader · API Health · Local Usage</span>
+          </div>
+          <div id="groq-quota" class="codex-quota"></div>
+        </div>
+
+        <div class="card card-tech" data-nova-id="gemma-quota">
+          <div class="section-head">
+            <h2>Gemma 4 31B Fallback</h2>
+            <span>Google AI Studio · models/gemma-4-31b-it · Reserve For Codex Exhaustion</span>
+          </div>
+          <div id="gemma-quota" class="codex-quota"></div>
+        </div>
+        
+        <div class="card card-tech">
+          <div class="section-head">
+            <h2>Harness Quality Gate</h2>
+            <span>Scenario Checks Before Trusting Automations</span>
+          </div>
+          <div id="harness-summary" class="harness-summary"></div>
+          <div id="harness" class="check-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panel: Jobs & Runs -->
+    <div id="tab-jobs" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech col-span-2" data-nova-id="job-runs">
+          <div class="section-head">
+            <h2>Jobs & Runs</h2>
+            <span>OpenClaw Cron · Harness · Repo Review Queue</span>
+          </div>
+          <div id="job-runs" class="job-runs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panel: System Docs -->
+    <div id="tab-system" class="tab-panel">
+      <div class="layout">
+        <div class="left">
+          <div class="card card-tech platform-card">
+            <div class="section-head">
+              <h2>Platform</h2>
+              <span>Architecture · Memory · Capabilities</span>
+            </div>
+            <div id="platform-docs" class="platform-docs"></div>
+          </div>
+        </div>
+        
+        <div class="right">
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Roadmap</h2>
+              <span>Full Dashboard Path</span>
+            </div>
+            <ol id="roadmap" class="tech-list"></ol>
+          </div>
+          
+          <details class="card card-tech raw-details">
+            <summary>Raw OpenClaw Status <span class="toggle-indicator"></span></summary>
+            <pre id="raw">—</pre>
+          </details>
+        </div>
+      </div>
+    </div>
   </main>
-  <script src="app.js"></script>
+  </div> <!-- /main-content -->
+  </div> <!-- /app-container -->
+  
+  <script src="app.js?v=1.3.1" defer></script>
+  
+  <!-- Interactive Command Center Scripts -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Audio Synth Helpers (Fallback if app.js is not loaded yet)
+      function getLocalAudioContext() {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return null;
+        if (!window.audioCtxInstance) {
+          window.audioCtxInstance = new AudioContext();
+        }
+        return window.audioCtxInstance;
+      }
+
+      function triggerLocalHoverSound() {
+        const ctx = getLocalAudioContext();
+        if (!ctx || ctx.state === 'suspended') return;
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(3200, t);
+        gain.gain.setValueAtTime(0.003, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.035);
+      }
+
+      // Hover Sound Listener Assignment
+      document.querySelectorAll('.tab-btn, button:not(:disabled), .theme-dot').forEach(el => {
+        el.addEventListener('mouseenter', triggerLocalHoverSound);
+      });
+
+      // Tab Switching controller
+      const tabBtns = document.querySelectorAll('.tab-btn');
+      const tabPanels = document.querySelectorAll('.tab-panel');
+      
+      tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetTab = btn.getAttribute('data-tab');
+          
+          tabBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          tabPanels.forEach(panel => {
+            if (panel.id === `tab-${targetTab}`) {
+              panel.classList.add('active');
+            } else {
+              panel.classList.remove('active');
+            }
+          });
+
+          // Play confirm audio sound on tab click
+          if (typeof playCommandSound === 'function') {
+            playCommandSound('confirm');
+          }
+          
+          appendConsoleLog(`Switched view to segment: [${targetTab.toUpperCase()}]`);
+        });
+      });
+
+      // HUD Theme Selector Controller
+      const themeDots = document.querySelectorAll('.theme-dot');
+      const savedTheme = localStorage.getItem('nova-ops-theme') || 'cyan';
+      
+      // Apply saved theme profile
+      document.body.classList.add(`theme-${savedTheme}`);
+      themeDots.forEach(dot => {
+        if (dot.getAttribute('data-theme') === savedTheme) {
+          dot.classList.add('active');
+        } else {
+          dot.classList.remove('active');
+        }
+      });
+      
+      themeDots.forEach(dot => {
+        dot.addEventListener('click', () => {
+          const theme = dot.getAttribute('data-theme');
+          
+          // Reset theme classes on body
+          document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
+          document.body.classList.add(`theme-${theme}`);
+          
+          themeDots.forEach(d => d.classList.remove('active'));
+          dot.classList.add('active');
+          
+          localStorage.setItem('nova-ops-theme', theme);
+          
+          if (typeof update3DColor === 'function') {
+            update3DColor();
+          }
+          
+          if (typeof playCommandSound === 'function') {
+            playCommandSound('confirm');
+          }
+          
+          appendConsoleLog(`HUD Color Profile re-skinned to: [${theme.toUpperCase()}]`);
+        });
+      });
+
+      // Focus Mode Toggle Controller (Reduce Motion & Visual Fatigue)
+      const focusToggle = document.getElementById('focus-toggle');
+      let isFocusMode = localStorage.getItem('nova-ops-focus-mode') === 'true';
+
+      const applyFocusMode = (active) => {
+        if (active) {
+          document.body.classList.add('focus-mode');
+          if (focusToggle) focusToggle.classList.add('active');
+          appendConsoleLog("Focus Mode: ACTIVE (Visual animations and rotations reduced).");
+        } else {
+          document.body.classList.remove('focus-mode');
+          if (focusToggle) focusToggle.classList.remove('active');
+          appendConsoleLog("Focus Mode: INACTIVE (Full operational animations restored).");
+        }
+        localStorage.setItem('nova-ops-focus-mode', active);
+      };
+
+      // Apply initial Focus Mode state
+      applyFocusMode(isFocusMode);
+
+      if (focusToggle) {
+        focusToggle.addEventListener('click', () => {
+          isFocusMode = !isFocusMode;
+          applyFocusMode(isFocusMode);
+          if (typeof playCommandSound === 'function') {
+            playCommandSound('confirm');
+          }
+        });
+      }
+
+      // Live Diagnostic Console log stream controller
+      function esc(x) {
+        return String(x ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      }
+
+      function appendConsoleLog(msg) {
+        const consoleEl = document.getElementById('diagnostic-console');
+        if (!consoleEl) return;
+        const time = new Date().toLocaleTimeString();
+        const logLine = document.createElement('div');
+        logLine.className = 'console-line';
+        logLine.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${esc(msg)}</span>`;
+        consoleEl.appendChild(logLine);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+        
+        while (consoleEl.children.length > 25) {
+          consoleEl.removeChild(consoleEl.firstChild);
+        }
+      }
+      window.appendConsoleLog = appendConsoleLog; // Expose globally for app.js triggers
+
+      // Populate only interface lifecycle logs; operational claims arrive from API results in app.js.
+      setTimeout(() => {
+        appendConsoleLog("Command interface initialized in read-only mode.");
+        appendConsoleLog("Telemetry auto-refresh configured (30s interval).");
+      }, 1000);
+
+      // Add log when click Sync Telemetry
+      const refreshBtn = document.getElementById('refresh');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+          appendConsoleLog("Force synchronization requested by user. Dispatching queries...");
+        });
+      }
+
+      // Search & Filtering Controller
+      const searchInput = document.getElementById('search-input');
+      if (searchInput) {
+        let logTimeout = null;
+        searchInput.addEventListener('input', (e) => {
+          const q = e.target.value.toLowerCase().trim();
+          
+          if (q) {
+            document.body.classList.add('searching');
+          } else {
+            document.body.classList.remove('searching');
+          }
+
+          // Filter Service Health
+          document.querySelectorAll('.service').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'grid' : 'none';
+          });
+          
+          // Filter Grafana Items
+          document.querySelectorAll('.grafana-item').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+
+          // Filter Codex Quota Items
+          document.querySelectorAll('.quota-item').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+          
+          // Filter Web Items
+          document.querySelectorAll('.web-item').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+          
+          // Filter Alert Routes
+          document.querySelectorAll('.alert-route').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+
+          document.querySelectorAll('.incident-item, .workflow-item, .jobrun-item').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? '' : 'none';
+          });
+          
+          // Filter Harness Checks
+          document.querySelectorAll('.check').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'grid' : 'none';
+          });
+
+          // Filter Platform Documents
+          document.querySelectorAll('.platform-doc').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+          
+          // Filter Guard Timeline Items
+          document.querySelectorAll('.timeline-item').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'block' : 'none';
+          });
+
+          // Filter Docker rows
+          document.querySelectorAll('#docker .row:not(.head)').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = text.includes(q) ? 'grid' : 'none';
+          });
+
+          // Evaluate cards for search matches
+          let matchedCount = 0;
+          document.querySelectorAll('.card').forEach(card => {
+            const items = card.querySelectorAll('.service, .grafana-item, .quota-item, .web-item, .alert-route, .incident-item, .workflow-item, .jobrun-item, .check, .platform-doc, .timeline-item, #docker .row:not(.head)');
+            if (items.length > 0) {
+              const hasMatch = Array.from(items).some(item => item.style.display !== 'none');
+              card.classList.toggle('has-search-match', hasMatch);
+              if (hasMatch) {
+                matchedCount += Array.from(items).filter(item => item.style.display !== 'none').length;
+              }
+            }
+          });
+
+          // Debounced logging of search query
+          if (q) {
+            clearTimeout(logTimeout);
+            logTimeout = setTimeout(() => {
+              appendConsoleLog(`Tactical scan complete for "${q}". Matches: ${matchedCount}`);
+            }, 600);
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>

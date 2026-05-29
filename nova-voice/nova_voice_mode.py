@@ -20,6 +20,8 @@ VALID_MODES = {"off", "voice", "both", "auto"}
 DEFAULT_STATE = {
     "mode": "auto",
     "defaultInstruct": "female, young adult, moderate pitch",
+    "defaultSpeed": 0.94,
+    "defaultNumStep": 32,
     "updatedAt": None,
     "updatedBy": "system",
 }
@@ -64,6 +66,12 @@ def main() -> int:
     tonep.add_argument("instruct")
     tonep.add_argument("--by", default="nick")
 
+    profilep = sub.add_parser("profile")
+    profilep.add_argument("instruct")
+    profilep.add_argument("--speed", type=float, default=DEFAULT_STATE["defaultSpeed"])
+    profilep.add_argument("--num-step", type=int, default=DEFAULT_STATE["defaultNumStep"])
+    profilep.add_argument("--by", default="nick")
+
     args = p.parse_args()
     state = load()
 
@@ -81,6 +89,16 @@ def main() -> int:
 
     if args.cmd == "tone":
         state["defaultInstruct"] = args.instruct
+        state["updatedAt"] = now()
+        state["updatedBy"] = args.by
+        save(state)
+        print(json.dumps(state, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "profile":
+        state["defaultInstruct"] = args.instruct
+        state["defaultSpeed"] = args.speed
+        state["defaultNumStep"] = args.num_step
         state["updatedAt"] = now()
         state["updatedBy"] = args.by
         save(state)

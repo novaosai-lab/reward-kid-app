@@ -14,6 +14,9 @@ Return Prod Order Monitor Google Sheet dashboard link.
 ### `/alert-summary [today|hour|all]`
 Summarize local/Sheet alert data by category, impact, endpoint, and err_code.
 
+### `/quota`
+Return a mobile-friendly GPT/OpenClaw quota summary using current session status: model, usage remaining, weekly remaining, and context usage. Do not expose account email, OAuth profile, session key, or internal IDs.
+
 ### `/rca-draft <TID|orderNo|messageId>`
 Create RCA starter from a selected alert.
 

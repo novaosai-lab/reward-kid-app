@@ -82,3 +82,41 @@ Important modules from technical manual:
 ## Initial verdict
 
 High-value reference repo. Best use is selective architecture learning, not installation. Most directly useful concepts for Nova now: permission layering, technical-manual structure, schedule run primitive, KMS markdown wiki, and skill lazy loading.
+
+## Update read - 2026-05-23
+
+Upstream main has moved from local reviewed commit 9f92aec to baaed1b (Release v0.16.0). Local clone was fetched read-only; working tree was not checked out, built, or run.
+
+GitHub metadata at read time:
+
+- Rust repo, public, Apache-2.0 metadata on GitHub and README states MIT OR Apache-2.0.
+- About 1,032 stars, 139 forks, 3 open issues.
+- Created 2026-04-20, pushed 2026-05-22, updated 2026-05-23.
+- Topics include agent-harness, agent-teams, ai-agent, claude-code, kms, llm-wiki, multi-provider, rust, tauri.
+
+Notable current capabilities from README / manuals:
+
+- One binary across desktop GUI, CLI REPL, non-interactive print mode, and serve mode.
+- Multi-provider model routing including Anthropic, OpenAI/Codex, Gemini/Gemma, Qwen, DeepSeek, OpenRouter, Ollama, LMStudio, OpenAI-compatible proxies, and Thai LLM providers.
+- Standards-aligned project context: AGENTS.md / CLAUDE.md, SKILL.md, MCP, plugins.
+- KMS: markdown wiki with index.md, log.md, SCHEMA.md, pages/, sources/, grep+read rather than embeddings, plus ingest/lint/reconcile/file-answer flows.
+- Side-channel agents, subagents, agent teams, plan mode, schedule daemon, hooks, document tools, session JSONL, serve mode over localhost WebSocket/HTTP.
+- LINE bridge design: local client relays through a narrow documented protocol, uses reply-first to avoid push quota exhaustion, and routes approvals via LINE quick replies.
+
+Most useful ideas to adapt for Nova now:
+
+1. KMS/NovaVault shape - adopt the explicit index.md + SCHEMA.md + log.md + pages/ + sources/ pattern for second-brain / Obsidian curated memory.
+2. Serve-mode security note - default loopback bind + SSH tunnel/auth boundary is a good pattern for local dashboards and mobile/web surfaces.
+3. LINE/Chat bridge contract - useful reference for future bridge approval surfaces: reply-first, quick-reply approvals, surface-aware question handling.
+4. Skill and plugin lifecycle - frontmatter discovery, lazy load, source precedence, marketplace/install trust gates are useful for Nova Skill OS.
+5. Schedule primitive - one manual run primitive reused by daemon/cron/UI is a cleaner model for Nova scheduled agents.
+6. Technical manual discipline - every subsystem has source module mapping and cross-references; Nova platform docs should continue moving in this direction.
+
+Recommendation unchanged: do not replace OpenClaw or install thClaws into Nova by default. Treat thClaws as a high-signal architecture/reference repo.
+
+Risk notes:
+
+- Full agent harness with shell, file, MCP, scheduling, hooks, web server, plugins, and memory surfaces means high blast radius if installed casually.
+- Serve mode is single-user and relies on loopback/SSH/reverse-proxy auth boundary; never expose directly.
+- Plugin/skill install and MCP stdio remain supply-chain boundaries.
+- LINE official relay server is not fully in the public mirror; only protocol/client docs are public.

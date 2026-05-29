@@ -4,6 +4,7 @@ Date: 2026-05-14
 Repo: https://github.com/nexu-io/open-design
 Local clone: `/Users/nova/.openclaw/workspace/external/open-design`
 Commit reviewed: `7549883`
+Latest refreshed review: 2026-05-19, upstream `56988e40`
 License: Apache-2.0
 
 ## Executive Summary
@@ -26,6 +27,7 @@ Avoid for now:
 
 - Design systems: 149 `DESIGN.md` files.
 - Skills: 107 `SKILL.md` files.
+- Current README claims broader runtime support including Codex CLI auto-detection, BYOK proxy fallback, design/media skills, and local daemon/web/desktop surfaces. Treat those as runtime-product capabilities to review separately, not as permission to install.
 - Main runtime: Next.js web app + local Node daemon + agent CLI adapters.
 - Package manager: `pnpm@10.33.2`.
 - License: Apache-2.0.
@@ -113,6 +115,9 @@ Good ideas:
 3. Skill frontmatter extensions for mode, preview type, inputs, and outputs.
 4. Sandboxed iframe preview for generated artifacts.
 5. Comment/surgical edit pattern using stable element IDs like `data-od-id`.
+6. Codex-compatible agent adapter pattern: run Codex scoped to the artifact directory, not the whole workspace.
+7. P0/P1/P2 checklist per artifact skill before emitting final output.
+8. Explicit direction picker before generation: ask for audience/surface/tone, then choose a deterministic design direction instead of improvising visuals.
 
 Not recommended now:
 1. Full daemon install/running alongside OpenClaw; overlap and extra attack surface.
@@ -131,6 +136,26 @@ Medium-risk / inspect before using:
 - Figma skills: require external write access.
 - image/video/audio generation skills: credential/provider-heavy.
 - screenshot/browser skills: overlap with OpenClaw browser tooling.
+
+## 2026-05-19 Codex/Nova Fit Update
+
+What Codex already supports well:
+- Reading and applying `SKILL.md` workflows.
+- Using repo-local design instructions such as `DESIGN.md`, AGENTS-style rules, and quality checklists.
+- Generating/editing HTML/CSS/React artifacts directly in a project folder.
+- Running local validation gates: typecheck, lint/build, browser screenshot, Playwright-style inspection when available.
+
+What Nova should adapt now:
+- A small Nova-native `DESIGN.md` format using the 9 sections from Open Design.
+- A lightweight UI-generation loop: brief -> design direction -> implement -> screenshot/viewport check -> P0 checklist -> final.
+- A P0 anti-slop gate: no invented metrics, no generic purple/blue AI gradients, no emoji-as-icons, no lorem ipsum, no broken mobile reflow, no placeholder links.
+- Stable UI anchors such as `data-nova-id` or component IDs for future surgical edits and visual review comments.
+
+What not to run blindly:
+- Full `pnpm tools-dev` daemon/web/desktop stack.
+- BYOK/API proxy routes or media credential surfaces.
+- Agent auto-spawning against broad workspaces.
+- Third-party skills that are catalogue stubs pointing to upstream repos without inspecting the upstream code/license first.
 
 ## Recommended Nova Roadmap
 

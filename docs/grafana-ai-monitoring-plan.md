@@ -2,6 +2,18 @@
 
 Purpose: เตรียมแนวทางให้ Nova/OpenClaw ใช้ Grafana API แบบ read-only เพื่อช่วย App Support / Incident / SRE monitoring เมื่อมี `GRAFANA_URL` และ `GRAFANA_TOKEN`.
 
+## Current Phoenix Connection
+
+- Project: Phoenix
+- Grafana URL: `https://grafana.lotussphoenix.com`
+- Private env file: `/Users/nova/.openclaw/workspace/grafana-openclaw-bridge/.env`
+- MCP bridge command: `/Users/nova/.openclaw/workspace/grafana-openclaw-bridge/run-mcp-grafana.sh`
+- Safety mode: read-only MCP flags enabled via `-disable-write`, `-disable-admin`, `-disable-annotations`, `-disable-alerting`, `-disable-oncall`, `-disable-incident`, and `-disable-rendering`.
+- Verified dashboard: `ae2iusdg7aepsd` / `PROD-Microservice-Logging`
+- Default datasource variables from provided dashboard link: `prod-quickwit` and Prometheus uid `de2e5ukcfjugwe`
+
+Do not store service account tokens in this file. Tokens belong only in the private `.env` file.
+
 ## Required inputs
 
 ```bash
