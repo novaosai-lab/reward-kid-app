@@ -428,9 +428,191 @@ function renderGemmaQuota(data) {
   setHtml('gemma-quota', note + (items || '<p class="muted">No Gemma provider configured.</p>'));
 }
 
+function renderTokenSessions(data) {
+  const note = data.note ? '<p class="quota-note">' + esc(data.note) + '</p>' : '';
+  const total = compactNumber(data.totalTokens || 0);
+  const header = '<div class="token-session-summary">'
+    + '<div><span>Total tokens</span><strong>' + esc(total) + '</strong></div>'
+    + '<div><span>Window</span><strong>' + esc((data.hours || 5) + 'h') + '</strong></div>'
+    + '<div><span>Warn at</span><strong>' + esc(compactNumber(data.warnTokens || 0)) + '</strong></div>'
+    + '</div>';
+  const items = (data.items || []).map(item => {
+    const cls = item.warning ? ' token-session danger' : ' token-session';
+    const pct = Math.max(0, Math.min(100, Number(item.tokenShare || 0)));
+    const latest = item.latestTurnAt ? new Date(item.latestTurnAt).toLocaleString() : 'n/a';
+    return '<article class="' + cls + '">'
+      + '<div class="token-session-head"><div><strong>' + esc(item.sessionKey || item.sessionId) + '</strong><span>' + esc(item.kind || 'session') + ' · ' + esc(item.model || 'unknown') + ' · ' + esc(item.account || 'unknown') + '</span></div>' + pill(item.warning ? 'critical' : 'healthy', item.warning ? 'High' : 'OK') + '</div>'
+      + '<div class="token-session-bar"><i style="width:' + esc(pct) + '%"></i></div>'
+      + '<div class="quota-grid">'
+      + '<div><span>Tokens</span><strong>' + esc(compactNumber(item.totalTokens || 0)) + '</strong></div>'
+      + '<div><span>Share</span><strong>' + esc(pct + '%') + '</strong></div>'
+      + '<div><span>Turns</span><strong>' + esc(item.turns || 0) + '</strong></div>'
+      + '<div><span>Cache read</span><strong>' + esc(compactNumber(item.cacheRead || 0)) + '</strong></div>'
+      + '</div>'
+      + '<div class="quota-meta"><span>Input: ' + esc(compactNumber(item.input || 0)) + '</span><span>Output: ' + esc(compactNumber(item.output || 0)) + '</span><span>Latest: ' + esc(latest) + '</span></div>'
+      + '</article>';
+  }).join('');
+  setHtml('token-sessions', note + header + (items || '<p class="muted">No session token usage in the selected window.</p>'));
+}
+
+function renderCommands(data) {
+  const sections = data.sections || [];
+  const total = sections.reduce((sum, section) => sum + (section.commands || []).length, 0);
+  const summary = '<div class="command-summary">'
+    + '<div><span>Sections</span><strong>' + esc(sections.length) + '</strong></div>'
+    + '<div><span>Commands</span><strong>' + esc(total) + '</strong></div>'
+    + '<div><span>Source</span><strong>Local JSON</strong></div>'
+    + '</div>';
+  const body = sections.map(section => {
+    const color = section.color || '#00f0ff';
+    const cards = (section.commands || []).map(command => {
+      const danger = command.danger ? ' danger' : '';
+      const tags = (command.tags || []).map(tag => '<span>' + esc(tag) + '</span>').join('');
+      return '<article class="command-card' + danger + '" style="--cmd-color:' + esc(color) + '">'
+        + '<div class="command-card-head"><div><strong>' + esc(command.title) + '</strong><span>' + esc(command.description || '') + '</span></div>' + (command.danger ? '<b class="danger-badge">Danger</b>' : '') + '</div>'
+        + '<div class="command-copy-row"><code>' + esc(command.command) + '</code><button type="button" class="command-copy-btn" data-command="' + esc(command.command) + '" title="Copy command">Copy</button></div>'
+        + '<div class="command-tags">' + tags + '</div>'
+        + '</article>';
+    }).join('');
+    return '<section class="command-section"><div class="command-section-head"><span style="background:' + esc(color) + '"></span><h3>' + esc(section.title) + '</h3><small>' + esc((section.commands || []).length) + ' commands</small></div><div class="command-grid">' + cards + '</div></section>';
+  }).join('');
+  setHtml('command-cheatsheet', summary + (body || '<p class="muted">No commands configured.</p>'));
+}
+
+function bindCommandCopyButtons() {
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('.command-copy-btn');
+    if (!button) return;
+    const command = button.dataset.command || '';
+    try {
+      await navigator.clipboard.writeText(command);
+      button.textContent = 'Copied';
+      button.classList.add('copied');
+      playCommandSound('confirm');
+      if (typeof window.appendConsoleLog === 'function') {
+        window.appendConsoleLog('Command copied from cheatsheet.');
+      }
+      setTimeout(() => {
+        button.textContent = 'Copy';
+        button.classList.remove('copied');
+      }, 1200);
+    } catch (e) {
+      playCommandSound('error');
+      button.textContent = 'Copy failed';
+      setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+    }
+  });
+}
+
 function renderPlatform(platform) {
   setHtml('platform-docs', (platform.docs || []).map(doc => `<article class="platform-doc"><h3>${esc(doc.title)}</h3><p>${esc((doc.text || '').split('\n').filter(Boolean).slice(0, 4).join(' '))}</p><details><summary>Read full document</summary><pre>${esc(doc.text || '')}</pre></details></article>`).join(''));
 }
+
+let visNetworkInstance = null;
+
+function renderArchitecture(data) {
+  const container = $('architecture-network');
+  if (!container || !window.vis) return;
+
+  const style = getComputedStyle(document.body);
+  const cyan = style.getPropertyValue('--cyan').trim() || '#00f0ff';
+  const purple = style.getPropertyValue('--purple-ai').trim() || '#a78bfa';
+  const emerald = style.getPropertyValue('--emerald').trim() || '#34d399';
+  const orange = '#fb923c';
+
+  const typeColors = {
+    file: cyan,
+    function: purple,
+    class: emerald,
+    import: orange
+  };
+
+  const nodes = (data.nodes || []).map(node => {
+    const color = typeColors[node.type] || '#94a3b8';
+    return {
+      id: node.id,
+      label: node.label,
+      title: `${node.id}\nType: ${node.type}\nLocation: ${node.source_file}:${node.source_location}`,
+      color: {
+        background: 'rgba(15, 23, 42, 0.8)',
+        border: color,
+        highlight: {
+          background: 'rgba(30, 41, 59, 0.9)',
+          border: color
+        }
+      },
+      font: {
+        color: '#e5eefb',
+        face: 'Outfit, sans-serif',
+        size: 14
+      },
+      borderWidth: 2,
+      shape: 'dot',
+      size: node.type === 'file' ? 20 : 12
+    };
+  });
+
+  const edges = (data.edges || []).map((edge, idx) => {
+    return {
+      id: `edge-${idx}`,
+      from: edge.source,
+      to: edge.target,
+      label: edge.relation,
+      font: {
+        color: '#94a3b8',
+        face: 'JetBrains Mono, monospace',
+        size: 9,
+        strokeWidth: 0
+      },
+      arrows: {
+        to: { enabled: true, scaleFactor: 0.5 }
+      },
+      color: {
+        color: 'rgba(148, 163, 184, 0.3)',
+        highlight: cyan,
+        hover: cyan
+      },
+      width: 1
+    };
+  });
+
+  const visData = {
+    nodes: new vis.DataSet(nodes),
+    edges: new vis.DataSet(edges)
+  };
+
+  const options = {
+    physics: {
+      stabilization: true,
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: 95,
+        springConstant: 0.04,
+        damping: 0.09,
+        avoidOverlap: 0.1
+      }
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      zoomView: true
+    }
+  };
+
+  if (visNetworkInstance) {
+    visNetworkInstance.destroy();
+  }
+  visNetworkInstance = new vis.Network(container, visData, options);
+}
+
+window.redrawArchitecture = function() {
+  if (visNetworkInstance) {
+    visNetworkInstance.setSize('100%', '550px');
+    visNetworkInstance.redraw();
+    visNetworkInstance.fit();
+  }
+};
 
 async function loadDetails(force = false) {
   const suffix = force ? '?refresh=1' : '';
@@ -438,13 +620,16 @@ async function loadDetails(force = false) {
     ['/api/codex-quota' + suffix, renderCodexQuota, 'codex-quota'],
     ['/api/gemma-quota' + suffix, renderGemmaQuota, 'gemma-quota'],
     ['/api/groq-quota' + suffix, renderGroqQuota, 'groq-quota'],
+    ['/api/token-sessions' + suffix, renderTokenSessions, 'token-sessions'],
     ['/api/grafana-mcp' + suffix, renderGrafana, 'grafana-mcp'],
     ['/api/web-inventory' + suffix, renderWeb, 'web-inventory'],
     ['/api/alert-routes' + suffix, renderAlerts, 'alert-routes'],
     ['/api/incidents' + suffix, renderIncidents, 'incident-radar'],
     ['/api/workflows' + suffix, renderWorkflows, 'workflow-health'],
     ['/api/job-runs' + suffix, renderJobRuns, 'job-runs'],
+    ['/data/commands.json', renderCommands, 'command-cheatsheet'],
     ['/api/platform-docs' + suffix, renderPlatform, 'platform-docs'],
+    ['/api/architecture' + suffix, renderArchitecture, 'architecture-network'],
   ];
   await Promise.all(jobs.map(async ([url, render, id]) => {
     try { render(await getJson(url)); }
@@ -719,17 +904,111 @@ async function load(force = false) {
   }
 }
 
+async function loadMemory() {
+  try {
+    const data = await getJson('/api/memory');
+    const select = $('memory-date-select');
+    if (!select) return;
+    
+    const currentSelected = select.value;
+    select.innerHTML = (data.files || []).map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    
+    if (currentSelected && (data.files || []).includes(currentSelected)) {
+      select.value = currentSelected;
+      await loadMemoryFile(currentSelected);
+    } else if (data.latest) {
+      select.value = data.latest;
+      setHtml('memory-content-area', formatMarkdown(data.latestContent || ''));
+    } else {
+      setHtml('memory-content-area', '<p class="muted">No daily note memory archives found.</p>');
+    }
+  } catch (e) {
+    setHtml('memory-content-area', `<p class="detail">Failed to load daily memory: ${esc(e.message)}</p>`);
+  }
+}
+
+async function loadMemoryFile(date) {
+  try {
+    const data = await getJson(`/api/memory?date=${encodeURIComponent(date)}`);
+    setHtml('memory-content-area', formatMarkdown(data.content || ''));
+  } catch (e) {
+    setHtml('memory-content-area', `<p class="detail">Failed to load daily note: ${esc(e.message)}</p>`);
+  }
+}
+
+function formatMarkdown(text) {
+  if (!text) return '';
+  let html = esc(text);
+  
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+  
+  return html;
+}
+
+async function triggerSummary() {
+  const btn = $('trigger-summary-btn');
+  const status = $('trigger-summary-status');
+  if (!btn || !status) return;
+  
+  btn.disabled = true;
+  status.textContent = 'Running summarizer script...';
+  status.className = 'status-msg warning';
+  playCommandSound('tap');
+  
+  try {
+    const res = await fetch('/api/trigger-summary');
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Turn summarized successfully! Telegram and daily note updated.';
+      status.className = 'status-msg healthy';
+      playCommandSound('confirm');
+      if (typeof window.appendConsoleLog === 'function') {
+        window.appendConsoleLog('Manual turn summarization triggered successfully.');
+      }
+      await loadMemory();
+    } else {
+      status.textContent = 'Failed: ' + (data.output || 'Unknown error');
+      status.className = 'status-msg critical';
+      playCommandSound('error');
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status-msg critical';
+    playCommandSound('error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function init() {
-  ['codex-quota', 'gemma-quota', 'groq-quota', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'platform-docs'].forEach(id => setHtml(id, skeleton(2)));
+  ['codex-quota', 'gemma-quota', 'groq-quota', 'token-sessions', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network'].forEach(id => setHtml(id, skeleton(2)));
   renderHarness({ overall: 'loading', deferred: true, checks: [] });
   if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = getPreferredVoice;
   $('sound-toggle')?.addEventListener('click', playIntroVoice);
+  bindCommandCopyButtons();
   $('refresh').addEventListener('click', () => {
     playCommandSound('tap');
     load(true);
   });
+  
+  // Bind memory tab interactive elements
+  $('memory-date-select')?.addEventListener('change', (e) => {
+    playCommandSound('tap');
+    loadMemoryFile(e.target.value);
+  });
+  $('trigger-summary-btn')?.addEventListener('click', triggerSummary);
+
   load();
-  setInterval(() => load(false), 30000);
+  loadMemory();
+  setInterval(() => {
+    load(false);
+    loadMemory();
+  }, 30000);
 
   // Initialize WebGL 3D Particle Sphere
   setTimeout(initNova3D, 800);

@@ -28,7 +28,7 @@ const CODEX_ACCOUNTS = [
   'openai-codex:watit2004@gmail.com',
   'openai-codex:natty.jk@gmail.com',
 ];
-const CODEX_APP_SERVER_REQUEST = 'file:///Users/nova/.openclaw/npm/node_modules/@openclaw/codex/dist/request-ohCy5ASa.js';
+const CODEX_APP_SERVER_DIST = '/Users/nova/.openclaw/npm/node_modules/@openclaw/codex/dist';
 const CODEX_APP_SERVER_BIN = '/Applications/Codex.app/Contents/Resources/codex';
 const GEMMA_AUTH_PROFILE = 'google:aistudio-gemma';
 const GEMMA_MODEL_ID = 'google/gemma-4-31b-it';
@@ -54,6 +54,212 @@ const GRAFANA_PROJECTS = [
   }
 ];
 
+const { execSync } = require('child_process');
+
+function getReadyz() {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:18789/readyz', (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(3000, () => req.destroy());
+  });
+}
+
+async function handleServiceCLI() {
+  const args = process.argv.slice(2);
+  let cmd = args[0];
+  let action = args[1];
+  if (cmd !== 'service') {
+    if (['install', 'uninstall', 'status', 'start', 'stop', 'restart'].includes(cmd)) {
+      action = cmd;
+      cmd = 'service';
+    } else {
+      return false;
+    }
+  }
+
+  const plistPath = path.join(process.env.HOME, 'Library/LaunchAgents/ai.openclaw.nova-ops-dashboard.plist');
+  const label = 'ai.openclaw.nova-ops-dashboard';
+
+  if (action === 'install') {
+    console.log(`Installing LaunchAgent service for ${label}...`);
+    const nodeBin = process.execPath;
+    const serverScript = path.resolve(__filename);
+    const workingDir = path.dirname(serverScript);
+    const stdoutLog = path.join(WORKSPACE, 'logs/nova-ops-dashboard.stdout.log');
+    const stderrLog = path.join(WORKSPACE, 'logs/nova-ops-dashboard.stderr.log');
+
+    const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${label}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodeBin}</string>
+    <string>${serverScript}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>${workingDir}</string>
+
+  <key>StandardOutPath</key>
+  <string>${stdoutLog}</string>
+
+  <key>StandardErrorPath</key>
+  <string>${stderrLog}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>NOVA_OPS_PORT</key>
+    <string>${PORT}</string>
+  </dict>
+</dict>
+</plist>
+`;
+    await fsp.mkdir(path.dirname(plistPath), { recursive: true });
+    await fsp.writeFile(plistPath, plistContent, 'utf8');
+    console.log(`Saved plist file to ${plistPath}`);
+    try {
+      execSync(`launchctl load "${plistPath}"`, { stdio: 'inherit' });
+      console.log(`Service successfully loaded and started.`);
+    } catch (e) {
+      console.warn(`Warning: failed to run launchctl load (it might already be loaded): ${e.message}`);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'uninstall') {
+    console.log(`Uninstalling LaunchAgent service for ${label}...`);
+    try {
+      execSync(`launchctl unload "${plistPath}"`, { stdio: 'inherit' });
+    } catch (e) {
+      console.warn(`Warning: failed to run launchctl unload: ${e.message}`);
+    }
+    try {
+      await fsp.unlink(plistPath);
+      console.log(`Deleted plist file.`);
+    } catch (e) {
+      console.warn(`Warning: could not delete plist file: ${e.message}`);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'start') {
+    console.log(`Starting service ${label}...`);
+    try {
+      execSync(`launchctl start ${label}`, { stdio: 'inherit' });
+      console.log(`Service started.`);
+    } catch (e) {
+      console.error(`Error starting service: ${e.message}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'stop') {
+    console.log(`Stopping service ${label}...`);
+    try {
+      execSync(`launchctl stop ${label}`, { stdio: 'inherit' });
+      console.log(`Service stopped.`);
+    } catch (e) {
+      console.error(`Error stopping service: ${e.message}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'restart') {
+    console.log(`Restarting service ${label}...`);
+    try {
+      execSync(`launchctl stop ${label}`, { stdio: 'ignore' });
+    } catch {}
+    try {
+      execSync(`launchctl unload "${plistPath}"`, { stdio: 'ignore' });
+    } catch {}
+    try {
+      execSync(`launchctl load "${plistPath}"`, { stdio: 'inherit' });
+      console.log(`Service restarted.`);
+    } catch (e) {
+      console.error(`Error restarting service: ${e.message}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'status') {
+    console.log(`Nova Ops Dashboard status check...`);
+    let isLoaded = false;
+    let pid = null;
+    let lastStatus = null;
+    try {
+      const out = execSync(`launchctl list | grep ${label}`, { encoding: 'utf8' });
+      const parts = out.trim().split(/\s+/);
+      pid = parts[0] === '-' ? null : parts[0];
+      lastStatus = parts[1];
+      isLoaded = true;
+    } catch {}
+
+    console.log(`Label:       ${label}`);
+    console.log(`Status:      ${isLoaded ? (pid ? 'running' : 'loaded (idle)') : 'not loaded'}`);
+    if (pid) console.log(`PID:         ${pid}`);
+    if (lastStatus) console.log(`Last Status: ${lastStatus}`);
+    console.log(`Port:        ${PORT}`);
+
+    try {
+      const pingUrl = `http://127.0.0.1:${PORT}/api/ping`;
+      console.log(`Testing HTTP ping to ${pingUrl}...`);
+      const http = require('http');
+      http.get(pingUrl, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          console.log(`Ping response (HTTP ${res.statusCode}): ${data.trim()}`);
+          process.exit(0);
+        });
+      }).on('error', (e) => {
+        console.error(`HTTP Ping failed: ${e.message}`);
+        process.exit(1);
+      });
+    } catch (e) {
+      console.error(`Failed to verify HTTP status: ${e.message}`);
+      process.exit(1);
+    }
+    return true;
+  }
+
+  console.log(`Unknown service action: ${action}. Use: install | uninstall | status | start | stop | restart`);
+  process.exit(1);
+}
+
+const args = process.argv.slice(2);
+const isServiceCmd = args[0] === 'service' || ['install', 'uninstall', 'status', 'start', 'stop', 'restart'].includes(args[0]);
+if (isServiceCmd) {
+  handleServiceCLI().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
+}
+
 const cache = new Map();
 const TTL = {
   fastStatus: 8000,
@@ -68,6 +274,7 @@ const TTL = {
   codexQuota: 30000,
   gemmaQuota: 30000,
   groqQuota: 30000,
+  tokenSessions: 30000,
   jobRuns: 30000,
 };
 
@@ -335,10 +542,34 @@ async function collectWebInventory() {
   return { generatedAt: new Date().toISOString(), items };
 }
 
+function readOpenClawChannel(output, name) {
+  const text = String(output || '');
+  const target = String(name || '').toLowerCase();
+  for (const line of text.split('\n')) {
+    if (!line.includes('│') || !line.toLowerCase().includes(target)) continue;
+    const cells = line.split('│').map(cell => cell.trim()).filter(Boolean);
+    const channelIndex = cells.findIndex(cell => cell.toLowerCase() === target);
+    if (channelIndex === -1) continue;
+    const enabled = cells[channelIndex + 1] || '';
+    const state = cells[channelIndex + 2] || '';
+    const enabledOn = /^ON$/i.test(enabled);
+    const stateOk = /^(OK|SETUP|READY|RUNNING|ACTIVE)$/i.test(state);
+    return {
+      name,
+      enabled,
+      state,
+      status: enabledOn && stateOk ? 'healthy' : enabledOn ? 'warning' : 'unknown',
+      detail: [enabled, state].filter(Boolean).join('/'),
+    };
+  }
+
+  const legacy = new RegExp(`${name}\\s+│\\s+ON\\s+│\\s+(OK|SETUP|READY|RUNNING|ACTIVE)`, 'i');
+  if (legacy.test(text)) return { name, enabled: 'ON', state: 'OK', status: 'healthy', detail: 'ON/OK' };
+  return { name, enabled: '', state: '', status: text.toLowerCase().includes(target) ? 'warning' : 'unknown', detail: 'not reported' };
+}
+
 function channelStatusFromOpenClaw(output, name) {
-  const re = new RegExp(`${name}\\s+│\\s+ON\\s+│\\s+OK`, 'i');
-  if (re.test(output || '')) return 'healthy';
-  return String(output || '').includes(name) ? 'warning' : 'unknown';
+  return readOpenClawChannel(output, name).status;
 }
 
 async function collectAlertRoutes() {
@@ -351,8 +582,9 @@ async function collectAlertRoutes() {
     let statusLabel = 'Unknown';
     let evidence = '';
     if (route.health === 'openclaw-channel') {
-      status = channelStatusFromOpenClaw(openclawStatus.output, route.channelName);
-      statusLabel = status === 'healthy' ? 'ON / OK' : status === 'warning' ? 'Configured with warning' : 'Not reported';
+      const channel = readOpenClawChannel(openclawStatus.output, route.channelName);
+      status = channel.status;
+      statusLabel = status === 'healthy' ? channel.detail : status === 'warning' ? 'Configured with warning' : 'Not reported';
       evidence = `${route.channelName} from openclaw status`;
     } else if (route.health === 'port') {
       const active = await checkPort(route.port);
@@ -748,6 +980,120 @@ function addCodexUsage(bucket, usage = {}) {
   bucket.cost += Number(usage.cost?.total || 0);
 }
 
+function emptyTokenSession(sessionId, sessionKey = '') {
+  const key = sessionKey || sessionId;
+  return {
+    sessionId,
+    sessionKey: key,
+    kind: inferSessionKind(key),
+    model: 'unknown',
+    account: 'unknown',
+    turns: 0,
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    latestTurnAt: '',
+    firstTurnAt: '',
+  };
+}
+
+function inferSessionKind(sessionKey = '') {
+  if (sessionKey.includes(':cron:')) return 'cron';
+  if (sessionKey.includes(':telegram:') || sessionKey.includes(':discord:') || sessionKey.includes(':line:')) return 'channel';
+  if (sessionKey.endsWith(':main') || sessionKey.includes(':main:main')) return 'main';
+  if (sessionKey.includes(':isolated')) return 'isolated';
+  return 'session';
+}
+
+function collectSessionKeys(value, out = new Map()) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectSessionKeys(item, out);
+    return out;
+  }
+  if (!value || typeof value !== 'object') return out;
+  const sessionId = value.sessionId || value.id;
+  if (sessionId && value.sessionKey) out.set(String(sessionId), String(value.sessionKey));
+  for (const child of Object.values(value)) collectSessionKeys(child, out);
+  return out;
+}
+
+async function readSessionAccount(jsonlPath) {
+  const sidecar = `${jsonlPath}.codex-app-server.json`;
+  const meta = await readJsonFile(sidecar);
+  return meta?.authProfileId || meta?.accountId || 'unknown';
+}
+
+async function collectTokenSessions() {
+  const now = Date.now();
+  const hours = 5;
+  const warnTokens = 250000;
+  const cutoff = now - hours * 60 * 60 * 1000;
+  const files = await fsp.readdir(OPENCLAW_SESSIONS_DIR);
+  const sessionsIndex = await readJsonFile(path.join(OPENCLAW_SESSIONS_DIR, 'sessions.json'));
+  const sessionKeys = collectSessionKeys(sessionsIndex);
+  const itemsBySession = new Map();
+
+  for (const file of files) {
+    if (!file.endsWith('.jsonl') || file.includes('.trajectory')) continue;
+    const sessionId = file.replace(/\.jsonl$/, '').replace(/\.deleted\..*$/, '');
+    const sessionKey = sessionKeys.get(sessionId) || sessionId;
+    const item = itemsBySession.get(sessionId) || emptyTokenSession(sessionId, sessionKey);
+    if (!itemsBySession.has(sessionId)) {
+      item.account = await readSessionAccount(path.join(OPENCLAW_SESSIONS_DIR, file));
+      itemsBySession.set(sessionId, item);
+    }
+
+    let text = '';
+    try { text = await fsp.readFile(path.join(OPENCLAW_SESSIONS_DIR, file), 'utf8'); }
+    catch { continue; }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      const message = event.message || {};
+      if (event.type !== 'message' || message.role !== 'assistant' || !message.usage) continue;
+      const ts = parseEventTimestamp(message.timestamp || event.timestamp);
+      if (!Number.isFinite(ts) || ts < cutoff) continue;
+
+      const usage = message.usage;
+      item.turns += 1;
+      item.input += Number(usage.input || 0);
+      item.output += Number(usage.output || 0);
+      item.cacheRead += Number(usage.cacheRead || 0);
+      item.cacheWrite += Number(usage.cacheWrite || 0);
+      item.totalTokens += Number(usage.totalTokens || 0);
+      const candidateModel = message.model || event.model;
+      if (candidateModel && (item.model === 'unknown' || candidateModel !== 'delivery-mirror')) item.model = candidateModel;
+      if (!item.firstTurnAt || ts < Date.parse(item.firstTurnAt)) item.firstTurnAt = new Date(ts).toISOString();
+      if (!item.latestTurnAt || ts > Date.parse(item.latestTurnAt)) item.latestTurnAt = new Date(ts).toISOString();
+    }
+  }
+
+  const items = [...itemsBySession.values()]
+    .filter(item => item.turns > 0)
+    .sort((a, b) => b.totalTokens - a.totalTokens)
+    .slice(0, 12)
+    .map(item => ({
+      ...item,
+      warning: item.totalTokens >= warnTokens,
+      tokenShare: 0,
+    }));
+  const totalTokens = items.reduce((sum, item) => sum + item.totalTokens, 0);
+  for (const item of items) item.tokenShare = totalTokens ? Math.round((item.totalTokens / totalTokens) * 1000) / 10 : 0;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'openclaw-local-session-logs',
+    hours,
+    warnTokens,
+    totalTokens,
+    items,
+    note: 'Shows local session token usage for the last 5 hours. Use this to catch main/channel/cron sessions that are consuming premium model quota.',
+  };
+}
+
 function parseEventTimestamp(value) {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && /^\d{13}$/.test(value)) return Number(value);
@@ -780,8 +1126,41 @@ function normalizeCodexRealtimeLimit(value) {
   };
 }
 
+let codexRequestModulePromise = null;
+
+async function loadCodexRequestModule() {
+  if (!codexRequestModulePromise) {
+    codexRequestModulePromise = (async () => {
+      const files = await fsp.readdir(CODEX_APP_SERVER_DIST);
+      const candidates = await Promise.all(files
+        .filter(file => /^request-[\w-]+\.js$/.test(file))
+        .map(async file => {
+          const full = path.join(CODEX_APP_SERVER_DIST, file);
+          const stat = await fsp.stat(full).catch(() => null);
+          return stat ? { full, mtimeMs: stat.mtimeMs } : null;
+        }));
+      const candidate = candidates
+        .filter(Boolean)
+        .sort((left, right) => right.mtimeMs - left.mtimeMs)[0];
+      if (!candidate) throw new Error(`Codex request bundle not found in ${CODEX_APP_SERVER_DIST}`);
+
+      const mod = await import('file://' + candidate.full);
+      const methods = Object.values(mod).find(value => value && typeof value === 'object' && value.rateLimits === 'account/rateLimits/read');
+      const requestCodexAppServerJson = Object.values(mod).find(value => typeof value === 'function' && value.name === 'requestCodexAppServerJson');
+      if (!methods || !requestCodexAppServerJson) {
+        throw new Error(`Codex request bundle ${path.basename(candidate.full)} does not expose expected control request API`);
+      }
+      return { methods, requestCodexAppServerJson, source: candidate.full };
+    })().catch(error => {
+      codexRequestModulePromise = null;
+      throw error;
+    });
+  }
+  return codexRequestModulePromise;
+}
+
 async function readCodexRealtimeLimit(config, accountId) {
-  const { n: methods, t: requestCodexAppServerJson } = await import(CODEX_APP_SERVER_REQUEST);
+  const { methods, requestCodexAppServerJson } = await loadCodexRequestModule();
   return normalizeCodexRealtimeLimit(await requestCodexAppServerJson({
     method: methods.rateLimits,
     requestParams: undefined,
@@ -1187,7 +1566,7 @@ async function collectCodexQuota() {
 }
 
 async function collect() {
-  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker] = await Promise.all([
+  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker, readyz] = await Promise.all([
     run(OPENCLAW, ['status'], 25000),
     run(OPENCLAW, ['gateway', 'health'], 15000),
     run(OPENCLAW, ['gateway', 'status'], 15000),
@@ -1195,6 +1574,7 @@ async function collect() {
     run(OPENCLAW, ['tasks', 'list'], 15000),
     run(OPENCLAW, ['cron', 'list'], 15000),
     run('/usr/local/bin/docker', ['ps', '--format', '{{.Names}}|{{.Status}}|{{.Ports}}'], 8000),
+    getReadyz(),
   ]);
 
   let docker2 = docker;
@@ -1205,17 +1585,22 @@ async function collect() {
   const restarts = guardLog.filter(x => String(x.event || '').includes('restart')).slice(-20);
   const healthChecks = guardLog.filter(x => x.event === 'health_check');
 
-  const channels = [];
-  for (const name of ['Telegram', 'Discord']) {
-    const re = new RegExp(`${name}\\s+│\\s+ON\\s+│\\s+OK`, 'i');
-    channels.push({ name, status: re.test(status.output) ? 'healthy' : (status.output.includes(name) ? 'warning' : 'unknown') });
+  const channels = ['Telegram', 'Discord'].map(name => readOpenClawChannel(status.output, name));
+
+  let gatewayS = gatewayStatus.ok && gatewayHealth.ok ? 'healthy' : 'critical';
+  let gatewayDetail = gatewayHealth.output || gatewayStatus.output;
+  if (readyz) {
+    if (readyz.ready === false || (readyz.failing && readyz.failing.length > 0)) {
+      gatewayS = 'warning';
+      gatewayDetail = `Failing: ${readyz.failing.join(', ')}`;
+    }
   }
 
   const services = [
-    { name: 'OpenClaw Gateway', status: gatewayStatus.ok && gatewayHealth.ok ? 'healthy' : 'critical', detail: gatewayHealth.output || gatewayStatus.output },
+    { name: 'OpenClaw Gateway', status: gatewayS, detail: gatewayDetail },
     { name: 'OpenClaw Node', status: nodeStatus.ok && /running/i.test(nodeStatus.output) ? 'healthy' : statusFromText(nodeStatus.output), detail: nodeStatus.output },
     { name: 'Guard Agent', status: guardRecent ? 'healthy' : 'warning', detail: guardRecent ? `${guardRecent.event} @ ${guardRecent.ts}` : 'No guard log yet' },
-    { name: 'Channels', status: channels.every(c => c.status === 'healthy') ? 'healthy' : 'warning', detail: channels.map(c => `${c.name}: ${c.status}`).join(' · ') },
+    { name: 'Channels', status: channels.every(c => c.status === 'healthy') ? 'healthy' : 'warning', detail: channels.map(c => `${c.name}: ${c.detail || c.status}`).join(' · ') },
   ];
 
   const dockerRows = docker2.ok ? docker2.output.split('\n').filter(Boolean).map(row => {
@@ -1275,6 +1660,19 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, 'application/json', JSON.stringify({ ok: true, service: 'nova-ops-dashboard', generatedAt: new Date().toISOString() }));
     return;
   }
+  if (url.pathname === '/api/architecture') {
+    try {
+      const idx = await run('/Users/nova/.openclaw/workspace/bin/nova-ast-indexer', [ROOT], 10000);
+      if (idx.ok) {
+        send(res, 200, 'application/json', idx.output);
+      } else {
+        send(res, 500, 'application/json', JSON.stringify({ error: 'Failed to run AST indexer: ' + idx.output }));
+      }
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
   if (url.pathname === '/api/status') {
     try {
       const force = url.searchParams.get('refresh') === '1';
@@ -1326,6 +1724,48 @@ const server = http.createServer(async (req, res) => {
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
     return;
   }
+  if (url.pathname === '/api/token-sessions') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('token-sessions', TTL.tokenSessions, collectTokenSessions, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
+    return;
+  }
+  if (url.pathname === '/api/memory') {
+    try {
+      const memoryDir = path.join(WORKSPACE, 'memory');
+      const files = await fsp.readdir(memoryDir).catch(() => []);
+      const mdFiles = files.filter(f => f.endsWith('.md') && /^\d{4}-\d{2}-\d{2}\.md$/.test(f)).sort().reverse();
+      
+      const dateParam = url.searchParams.get('date');
+      if (dateParam) {
+        const safeFile = path.basename(dateParam) + '.md';
+        if (/^\d{4}-\d{2}-\d{2}\.md$/.test(safeFile)) {
+          const content = await fsp.readFile(path.join(memoryDir, safeFile), 'utf8').catch(() => '');
+          send(res, 200, 'application/json', JSON.stringify({ date: dateParam, content }));
+          return;
+        }
+      }
+      
+      const list = mdFiles.map(f => f.replace(/\.md$/, ''));
+      let latestContent = '';
+      if (mdFiles.length > 0) {
+        latestContent = await fsp.readFile(path.join(memoryDir, mdFiles[0]), 'utf8').catch(() => '');
+      }
+      send(res, 200, 'application/json', JSON.stringify({ files: list, latest: mdFiles[0]?.replace(/\.md$/, '') || '', latestContent }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/trigger-summary') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-summarize-turn');
+      const result = await run('python3', [scriptPath], 45000);
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
   if (url.pathname === '/api/harness') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('harness', TTL.harness, collectHarness, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
@@ -1368,6 +1808,8 @@ const server = http.createServer(async (req, res) => {
   } catch { send(res, 404, 'text/plain', 'Not found'); }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Nova Ops Dashboard running at http://127.0.0.1:${PORT}`);
-});
+if (!isServiceCmd) {
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`Nova Ops Dashboard running at http://127.0.0.1:${PORT}`);
+  });
+}

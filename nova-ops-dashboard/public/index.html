@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/vis-network@10.1.0/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
   <!-- Sci-Fi Ambient Backdrops -->
@@ -21,7 +22,7 @@
     <aside class="sidebar" aria-label="Tactical Navigation">
       <div class="brand">
         <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
-        <h1>Nova Ops <span class="version-badge">v1.3.0</span></h1>
+        <h1>Nova Ops <span class="version-badge">v1.3.2</span></h1>
       </div>
       
       <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
@@ -45,10 +46,25 @@
           <span class="tab-icon">⏱</span>
           <span>Jobs & Runs</span>
         </button>
+        <button class="tab-btn" data-tab="commands">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">⌘</span>
+          <span>Commands</span>
+        </button>
+        <button class="tab-btn" data-tab="memory">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">🧠</span>
+          <span>Daily Notes</span>
+        </button>
         <button class="tab-btn" data-tab="system">
           <span class="tab-glow"></span>
           <span class="tab-icon">⚙️</span>
           <span>System Docs</span>
+        </button>
+        <button class="tab-btn" data-tab="architecture">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">🕸️</span>
+          <span>Architecture</span>
         </button>
       </nav>
       
@@ -366,6 +382,14 @@
           </div>
           <div id="gemma-quota" class="codex-quota"></div>
         </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="token-sessions">
+          <div class="section-head">
+            <h2>High Token Sessions</h2>
+            <span>Main · Channel · Cron · Last 5 Hours</span>
+          </div>
+          <div id="token-sessions" class="token-sessions"></div>
+        </div>
         
         <div class="card card-tech">
           <div class="section-head">
@@ -387,6 +411,57 @@
             <span>OpenClaw Cron · Harness · Repo Review Queue</span>
           </div>
           <div id="job-runs" class="job-runs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panel: Commands -->
+    <div id="tab-commands" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech col-span-2" data-nova-id="command-cheatsheet">
+          <div class="section-head">
+            <h2>Command Cheatsheet</h2>
+            <span>OpenClaw · Grafana · Git · Docker · Local Ops</span>
+          </div>
+          <div id="command-cheatsheet" class="command-cheatsheet"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panel: Daily Memory Notes -->
+    <div id="tab-memory" class="tab-panel">
+      <div class="layout">
+        <div class="left">
+          <div class="card card-tech platform-card">
+            <div class="section-head">
+              <h2>Daily Memory Notes</h2>
+              <span>Incremental Session Log Summaries</span>
+            </div>
+            <div class="memory-selector-row">
+              <label for="memory-date-select">Select Date Archive:</label>
+              <select id="memory-date-select" class="cyber-select"></select>
+            </div>
+            <div id="memory-content-area" class="memory-content-markdown">
+              <p class="muted">Select a memory archive file to view summary notes.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="right">
+          <div class="card card-tech">
+            <div class="section-head">
+              <h2>Observability Control</h2>
+              <span>Manual Execution</span>
+            </div>
+            <div class="actions" style="margin-top: 15px;">
+              <button id="trigger-summary-btn" class="admin-btn active-btn" style="width: 100%; justify-content: center;">
+                <span class="btn-icon">⚡</span>
+                Summarize Turn
+              </button>
+            </div>
+            <p class="muted admin-disclaimer" style="margin-top: 12px;">Force immediate end-of-turn summarization of the active session, logging to the daily note and pushing to Telegram.</p>
+            <div id="trigger-summary-status" class="status-msg muted">Ready</div>
+          </div>
         </div>
       </div>
     </div>
@@ -420,11 +495,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab Panel: Architecture Call-Flow -->
+    <div id="tab-architecture" class="tab-panel">
+      <div class="layout-grid-1">
+        <div class="card card-tech glow-cyan" style="min-height: 650px; display: flex; flex-direction: column;">
+          <div class="section-head">
+            <h2>Interactive Call-Flow Mapping</h2>
+            <span>Local AST codebase structure and relationships</span>
+          </div>
+          <div id="architecture-network" style="flex: 1; width: 100%; height: 550px; border-radius: 8px; background: rgba(2, 4, 10, 0.4); margin-top: 15px; position: relative;"></div>
+          <div class="architecture-legend" style="display: flex; gap: 15px; margin-top: 10px; font-size: 11px; color: var(--text-muted);">
+            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #00f0ff; margin-right: 5px;"></span>File</div>
+            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #a78bfa; margin-right: 5px;"></span>Function</div>
+            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #34d399; margin-right: 5px;"></span>Class</div>
+            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #fb923c; margin-right: 5px;"></span>Dependency</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
   
-  <script src="app.js?v=1.3.1" defer></script>
+  <script src="app.js?v=1.3.2" defer></script>
   
   <!-- Interactive Command Center Scripts -->
   <script>
@@ -485,6 +579,9 @@
           }
           
           appendConsoleLog(`Switched view to segment: [${targetTab.toUpperCase()}]`);
+          if (targetTab === 'architecture' && typeof window.redrawArchitecture === 'function') {
+            setTimeout(window.redrawArchitecture, 50);
+          }
         });
       });
 
@@ -618,7 +715,7 @@
           });
 
           // Filter Codex Quota Items
-          document.querySelectorAll('.quota-item').forEach(el => {
+          document.querySelectorAll('.quota-item, .token-session').forEach(el => {
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? 'block' : 'none';
           });
@@ -635,7 +732,7 @@
             el.style.display = text.includes(q) ? 'block' : 'none';
           });
 
-          document.querySelectorAll('.incident-item, .workflow-item, .jobrun-item').forEach(el => {
+          document.querySelectorAll('.incident-item, .workflow-item, .jobrun-item, .command-card').forEach(el => {
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? '' : 'none';
           });
@@ -667,7 +764,7 @@
           // Evaluate cards for search matches
           let matchedCount = 0;
           document.querySelectorAll('.card').forEach(card => {
-            const items = card.querySelectorAll('.service, .grafana-item, .quota-item, .web-item, .alert-route, .incident-item, .workflow-item, .jobrun-item, .check, .platform-doc, .timeline-item, #docker .row:not(.head)');
+            const items = card.querySelectorAll('.service, .grafana-item, .quota-item, .token-session, .web-item, .alert-route, .incident-item, .workflow-item, .jobrun-item, .command-card, .check, .platform-doc, .timeline-item, #docker .row:not(.head)');
             if (items.length > 0) {
               const hasMatch = Array.from(items).some(item => item.style.display !== 'none');
               card.classList.toggle('has-search-match', hasMatch);
