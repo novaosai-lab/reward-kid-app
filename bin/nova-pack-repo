@@ -60,6 +60,10 @@ SECRET_PATTERNS = [
     re.compile(r'(?i)"(api_?key|token|secret|password|access_token|refresh_token|authorization)"\s*:\s*"[^"]{12,}"'),
 ]
 
+SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r'(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|password|authorization|private[_-]?key)\s*[:=]\s*["\']?([^"\'\s]+)'
+)
+
 
 def slugify(value: str) -> str:
     value = re.sub(r'[^A-Za-z0-9._-]+', '-', value.strip())
@@ -76,6 +80,17 @@ def should_skip_secret_scan_line(line: str) -> bool:
         return True
     if '<redacted>' in stripped:
         return True
+    if 'op://' in stripped:
+        return True
+    # These are references to secret-bearing environment variables, not secret
+    # literals. Keep literal assignment and token-prefix scans active.
+    if re.search(r'(?i)(os\.environ(?:\.get)?|os\.getenv|process\.env|getenv\(|Deno\.env\.get)\s*[\[(]', stripped):
+        return True
+    assignment = SENSITIVE_ASSIGNMENT_RE.search(stripped)
+    if assignment:
+        rhs = assignment.group(2)
+        if re.match(r'^[A-Za-z_][A-Za-z0-9_.]*\(', rhs) or re.match(r'^[A-Za-z_][A-Za-z0-9_.]*$', rhs):
+            return True
     return False
 
 

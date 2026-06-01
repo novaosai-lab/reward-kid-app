@@ -15,15 +15,21 @@ const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
 const SUPPORT_DIGEST_EXPORT = path.join(WORKSPACE, 'grafana-dashboards', 'export_support_digest_data.py');
 const SUPPORT_DIGEST_JSON = path.join(PUBLIC, 'data', 'support_digest.json');
 const STATUS_SNAPSHOT_JSON = path.join(PUBLIC, 'data', 'status_snapshot.json');
+const TELEGRAM_BRIDGE_LOG = path.join(WORKSPACE, 'logs', 'telegram-bridge.out.log');
 const N8N_DIR = path.join(WORKSPACE, 'n8n');
 const OPENCLAW_CONFIG_JSON = '/Users/nova/.openclaw/openclaw.json';
 const OPENCLAW_AUTH_PROFILES_JSON = '/Users/nova/.openclaw/agents/main/agent/auth-profiles.json';
 const OPENCLAW_SESSIONS_DIR = '/Users/nova/.openclaw/agents/main/sessions';
+const NOVA_CONTEXT_SLIMMER = path.join(WORKSPACE, 'bin', 'nova-context-slimmer');
+const NOVA_HOT_MEMORY = path.join(WORKSPACE, 'bin', 'nova-hot-memory');
 const PY_GOOGLE = path.join(WORKSPACE, '.venv-google', 'bin', 'python');
 const GRAFANA_BRIDGE = path.join(WORKSPACE, 'grafana-openclaw-bridge');
 const GROQ_KEY_FILE = '/Users/nova/.openclaw/secrets/cheap-repo-reader/groq-api-key.txt';
 const REPO_REVIEW_QUEUE_JSON = path.join(WORKSPACE, 'research', 'repo-review-queue', 'queue.json');
 const CHEAP_REPO_REVIEWS_DIR = path.join(WORKSPACE, 'research', 'cheap-repo-reviews');
+const VERIFICATION_DIR = path.join(WORKSPACE, 'outputs', 'verification');
+const NEXUS_PATTERNS_DOC = path.join(WORKSPACE, 'research', 'agency-agents', 'nova-nexus-patterns-2026-06-01.md');
+const AI_ENGINEERING_ADAPTATION_DOC = path.join(WORKSPACE, 'research', 'ai-engineering-from-scratch', 'nova-adaptation-plan-2026-06-01.md');
 const CODEX_ACCOUNTS = [
   'openai-codex:watit2004@gmail.com',
   'openai-codex:natty.jk@gmail.com',
@@ -267,6 +273,7 @@ const TTL = {
   platformDocs: 5 * 60 * 1000,
   webInventory: 15000,
   alertRoutes: 15000,
+  telegramHealth: 5000,
   grafanaMcp: 30000,
   supportDigest: 60000,
   incidents: 60000,
@@ -275,7 +282,12 @@ const TTL = {
   gemmaQuota: 30000,
   groqQuota: 30000,
   tokenSessions: 30000,
+  contextBudget: 30000,
   jobRuns: 30000,
+  teamControl: 10000,
+  agents: 30000,
+  activeTasks: 5000,
+  activeSessions: 5000,
 };
 
 const WEB_INVENTORY = [
@@ -446,12 +458,18 @@ function run(cmd, args = [], timeout = 15000, options = {}) {
 async function cached(key, ttl, producer, force = false) {
   const now = Date.now();
   const hit = cache.get(key);
-  if (!force && hit?.value && now - hit.ts < ttl) return { ...hit.value, cached: true, cacheAgeMs: now - hit.ts };
+  if (!force && hit?.value && now - hit.ts < ttl) {
+    return Array.isArray(hit.value)
+      ? Object.assign([...hit.value], { cached: true, cacheAgeMs: now - hit.ts })
+      : { ...hit.value, cached: true, cacheAgeMs: now - hit.ts };
+  }
   if (!force && hit?.pending) return hit.pending;
   const pending = Promise.resolve()
     .then(producer)
     .then(value => {
-      const wrapped = { ...value, cached: false, cacheAgeMs: 0 };
+      const wrapped = Array.isArray(value)
+        ? Object.assign([...value], { cached: false, cacheAgeMs: 0 })
+        : { ...value, cached: false, cacheAgeMs: 0 };
       cache.set(key, { ts: Date.now(), value: wrapped });
       return wrapped;
     })
@@ -570,6 +588,123 @@ function readOpenClawChannel(output, name) {
 
 function channelStatusFromOpenClaw(output, name) {
   return readOpenClawChannel(output, name).status;
+}
+
+function stripAnsi(text) {
+  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '');
+}
+
+function logTimeToIso(hms) {
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(String(hms || ''))) return null;
+  const now = new Date();
+  const [h, m, s] = hms.split(':').map(Number);
+  const d = new Date(now);
+  d.setHours(h, m, s, 0);
+  if (d.getTime() - now.getTime() > 60 * 60 * 1000) d.setDate(d.getDate() - 1);
+  return d.toISOString();
+}
+
+async function collectTelegramHealth() {
+  const [launchAgents, gatewayHealth] = await Promise.all([
+    run('/bin/launchctl', ['list'], 8000),
+    run(OPENCLAW, ['gateway', 'health'], 10000),
+  ]);
+  const serviceLine = (launchAgents.output || '').split('\n').find(row => row.includes('ai.openclaw.telegram-bridge')) || '';
+  const parts = serviceLine.trim().split(/\s+/);
+  const pid = serviceLine && parts[0] !== '-' ? parts[0] : null;
+  const running = Boolean(pid);
+
+  let raw = '';
+  try { raw = await fsp.readFile(TELEGRAM_BRIDGE_LOG, 'utf8'); } catch {}
+  const lines = stripAnsi(raw).trim().split('\n').filter(Boolean).slice(-220);
+  const interesting = lines
+    .filter(line => /(Inbound message accepted|Draft placeholder sent|Gateway stream opened|Gateway first token|Gateway stream complete|Stream reply delivered|Reply delivered|timeout|error|failed|listening|webhook cleared)/i.test(line))
+    .slice(-30);
+
+  let lastInbound = null;
+  let lastDelivered = null;
+  let lastPlaceholder = null;
+  let lastWarning = null;
+  let lastFirstTokenMs = null;
+  let lastConnectMs = null;
+  let lastElapsedMs = null;
+  let inboundCount = 0;
+  let deliveryCount = 0;
+
+  for (const line of interesting) {
+    const time = line.match(/^(\d{2}:\d{2}:\d{2})/)?.[1] || '';
+    const iso = logTimeToIso(time);
+    if (/Inbound message accepted/i.test(line)) {
+      inboundCount += 1;
+      lastInbound = { ts: iso, ageMs: iso ? Date.now() - Date.parse(iso) : null, chars: Number(line.match(/chars=(\d+)/)?.[1] || 0) };
+    }
+    if (/Draft placeholder sent/i.test(line)) {
+      lastPlaceholder = { ts: iso, ageMs: iso ? Date.now() - Date.parse(iso) : null };
+    }
+    if (/Gateway stream opened/i.test(line)) {
+      lastConnectMs = Number(line.match(/connectMs=(\d+)/)?.[1] || 0);
+    }
+    if (/Gateway first token/i.test(line)) {
+      lastFirstTokenMs = Number(line.match(/firstTokenMs=(\d+)/)?.[1] || 0);
+    }
+    if (/(Stream reply delivered|Reply delivered)/i.test(line)) {
+      deliveryCount += 1;
+      lastElapsedMs = Number(line.match(/elapsedMs=(\d+)/)?.[1] || 0);
+      lastDelivered = { ts: iso, ageMs: iso ? Date.now() - Date.parse(iso) : null, elapsedMs: lastElapsedMs };
+    }
+    if (/(timeout|error|failed)/i.test(line)) {
+      lastWarning = { ts: iso, line: line.replace(/^\d{2}:\d{2}:\d{2}\s+\w+\s+/, '').slice(0, 220) };
+    }
+  }
+
+  let status = 'healthy';
+  let statusLabel = 'Responsive';
+  const reasons = [];
+  if (!running) {
+    status = 'critical';
+    statusLabel = 'Bridge stopped';
+    reasons.push('LaunchAgent is not running');
+  } else if (!gatewayHealth.ok || !/OK/i.test(gatewayHealth.output || '')) {
+    status = 'critical';
+    statusLabel = 'Gateway unhealthy';
+    reasons.push('OpenClaw gateway health check failed');
+  } else if ((lastElapsedMs || 0) > 30000 || (lastFirstTokenMs || 0) > 10000) {
+    status = 'warning';
+    statusLabel = 'Slow reply observed';
+    reasons.push('Latest Telegram reply latency exceeded threshold');
+  } else if (!interesting.some(line => /listening/i.test(line))) {
+    status = 'warning';
+    statusLabel = 'No listener evidence';
+    reasons.push('Bridge is running but recent log does not show listening line');
+  }
+
+  const events = interesting.slice(-12).map(line => ({
+    ts: logTimeToIso(line.match(/^(\d{2}:\d{2}:\d{2})/)?.[1] || ''),
+    text: line.replace(/^\d{2}:\d{2}:\d{2}\s+\w+\s+/, '').slice(0, 260),
+    level: /error|failed|timeout/i.test(line) ? 'critical' : /Slow|warn/i.test(line) ? 'warning' : 'healthy'
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status,
+    statusLabel,
+    running,
+    pid,
+    serviceLine,
+    gatewayOk: gatewayHealth.ok && /OK/i.test(gatewayHealth.output || ''),
+    lastInbound,
+    lastPlaceholder,
+    lastDelivered,
+    lastConnectMs,
+    lastFirstTokenMs,
+    lastElapsedMs,
+    inboundCount,
+    deliveryCount,
+    lastWarning,
+    reasons,
+    events,
+    thresholds: { slowReplyMs: 30000, slowFirstTokenMs: 10000 },
+  };
 }
 
 async function collectAlertRoutes() {
@@ -826,6 +961,227 @@ async function collectRepoReviewRuns() {
       evidence: entry.reviewPath || entry.runLog || entry.notes || entry.url,
     };
   }).sort((a, b) => Date.parse(b.completedAt || b.startedAt || 0) - Date.parse(a.completedAt || a.startedAt || 0));
+}
+
+async function collectAgents() {
+  const result = await run(OPENCLAW, ['agents', 'list', '--json'], 15000);
+  if (!result.ok) throw new Error('Failed to run agents list: ' + result.output);
+  const parsed = JSON.parse(result.output);
+  if (Array.isArray(parsed)) return parsed;
+  return Object.entries(parsed || {})
+    .filter(([key, value]) => /^\d+$/.test(key) && value && typeof value === 'object')
+    .map(([, value]) => value);
+}
+
+async function collectActiveTasks() {
+  const result = await run(OPENCLAW, ['tasks', 'list', '--json'], 15000);
+  if (!result.ok) throw new Error('Failed to run tasks list: ' + result.output);
+  return JSON.parse(result.output);
+}
+
+async function collectActiveSessions() {
+  const result = await run(OPENCLAW, ['status', '--json'], 15000);
+  if (!result.ok) throw new Error('Failed to run status --json: ' + result.output);
+  const statusData = JSON.parse(result.output);
+  return {
+    generatedAt: new Date().toISOString(),
+    count: statusData.sessions?.count || 0,
+    recent: statusData.sessions?.recent || [],
+  };
+}
+
+function mapAgentRole(agent = {}) {
+  const haystack = [
+    agent.id,
+    agent.identityName,
+    agent.model,
+    agent.workspace,
+    agent.agentDir,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (/repo|research|reader|review/.test(haystack)) return 'Repo Reader';
+  if (/support|incident|rca|sre/.test(haystack)) return 'Support / RCA';
+  if (/qa|verify|test|quality/.test(haystack)) return 'QA / Verification';
+  if (/devops|docker|deploy|ops/.test(haystack)) return 'DevOps';
+  if (/full.?stack|frontend|backend|engineer|developer|react|node|typescript/.test(haystack)) return 'Senior Full Stack Developer';
+  if (/dashboard|frontend|ui|web/.test(haystack)) return 'Dashboard Builder';
+  return agent.isDefault ? 'Orchestrator' : 'Generalist';
+}
+
+async function collectVerificationReports(limit = 8) {
+  let files = [];
+  try {
+    files = await fsp.readdir(VERIFICATION_DIR);
+  } catch {
+    return [];
+  }
+  const jsonFiles = files.filter(file => file.endsWith('.json'));
+  const reports = await Promise.all(jsonFiles.map(async file => {
+    const full = path.join(VERIFICATION_DIR, file);
+    try {
+      const [stat, report] = await Promise.all([fsp.stat(full), readJsonFile(full)]);
+      return {
+        file,
+        path: full.replace(WORKSPACE + '/', ''),
+        taskId: report.task_id || report.taskId || path.basename(file, '.json'),
+        summary: report.summary || '',
+        passed: report.passed === true,
+        generatedAt: report.generated_at || report.generatedAt || stat.mtime.toISOString(),
+        findings: Array.isArray(report.findings) ? report.findings.length : 0,
+        sizeBytes: stat.size,
+      };
+    } catch {
+      return null;
+    }
+  }));
+  return reports.filter(Boolean)
+    .sort((a, b) => Date.parse(b.generatedAt || 0) - Date.parse(a.generatedAt || 0))
+    .slice(0, limit);
+}
+
+async function readPlaybookSnapshot() {
+  const [nexus, adaptation] = await Promise.all([
+    fsp.readFile(NEXUS_PATTERNS_DOC, 'utf8').catch(() => ''),
+    fsp.readFile(AI_ENGINEERING_ADAPTATION_DOC, 'utf8').catch(() => ''),
+  ]);
+  return {
+    nexusPath: NEXUS_PATTERNS_DOC.replace(WORKSPACE + '/', ''),
+    adaptationPath: AI_ENGINEERING_ADAPTATION_DOC.replace(WORKSPACE + '/', ''),
+    nexusAvailable: Boolean(nexus),
+    adaptationAvailable: Boolean(adaptation),
+    handoffTemplate: /## Handoff Template/i.test(nexus),
+    qaFeedbackTemplate: /## QA Failure Feedback/i.test(nexus),
+    escalationTemplate: /## Escalation Template/i.test(nexus),
+    incidentRunbook: /## Incident Micro-Runbook/i.test(nexus),
+    adaptationPlan: /deterministic verification|state schema|prompt-injection/i.test(adaptation),
+  };
+}
+
+async function collectTeamControl() {
+  const [agentsRaw, sessionsRaw, tasksRaw, reports, playbooks] = await Promise.all([
+    cached('agents', TTL.agents, collectAgents).catch(error => ({ error: error.message })),
+    cached('active-sessions', TTL.activeSessions, collectActiveSessions).catch(error => ({ error: error.message, count: 0, recent: [] })),
+    cached('active-tasks', TTL.activeTasks, collectActiveTasks).catch(error => ({ error: error.message, count: 0, tasks: [] })),
+    collectVerificationReports(),
+    readPlaybookSnapshot(),
+  ]);
+
+  const agents = Array.isArray(agentsRaw) ? agentsRaw : [];
+  const tasks = Array.isArray(tasksRaw.tasks) ? tasksRaw.tasks : [];
+  const sessions = Array.isArray(sessionsRaw.recent) ? sessionsRaw.recent : [];
+  const roles = [
+    {
+      id: 'orchestrator',
+      name: 'Orchestrator',
+      owner: 'Nova main session',
+      purpose: 'รับคำสั่งจากพี่นิค แยกงาน เลือก specialist และปิดงานด้วย evidence',
+      status: agents.some(a => a.isDefault) ? 'healthy' : 'warning',
+      evidence: 'OpenClaw default agent registry',
+    },
+    {
+      id: 'repo-reader',
+      name: 'Repo Reader',
+      owner: 'nova-cheap-repo-reader / local clone review',
+      purpose: 'อ่าน repo สาธารณะ สรุป pattern และกัน secret ก่อนส่งต่อ',
+      status: fs.existsSync(path.join(WORKSPACE, 'bin', 'nova-cheap-repo-reader')) ? 'healthy' : 'warning',
+      evidence: 'bin/nova-cheap-repo-reader + nova-pack-repo',
+    },
+    {
+      id: 'qa-verification',
+      name: 'QA / Verification',
+      owner: 'nova-verify-task',
+      purpose: 'ตรวจงานแบบ deterministic ไม่ใช้ LLM ใน gate',
+      status: fs.existsSync(path.join(WORKSPACE, 'bin', 'nova-verify-task')) ? 'healthy' : 'critical',
+      evidence: `${reports.length} verification reports`,
+    },
+    {
+      id: 'senior-full-stack-developer',
+      name: 'Senior Full Stack Developer',
+      owner: 'Nova implementation lane',
+      purpose: 'ออกแบบและแก้ end-to-end app flow: frontend, backend/API, integration, tests, rollout และ code review',
+      status: fs.existsSync(path.join(WORKSPACE, 'docs', 'nova-verification-gate.md')) ? 'healthy' : 'warning',
+      evidence: 'Nova code workspace + nova-verify-task closeout',
+    },
+    {
+      id: 'support-rca',
+      name: 'Support / RCA',
+      owner: 'support-engineering framing',
+      purpose: 'incident triage, RCA, SLO risk, support backlog และ prevention',
+      status: playbooks.incidentRunbook ? 'healthy' : 'warning',
+      evidence: playbooks.nexusPath,
+    },
+    {
+      id: 'workflow-automation',
+      name: 'Workflow Automation',
+      owner: 'OpenClaw cron / n8n / LaunchAgents',
+      purpose: 'งาน schedule, digest, queue, notification และ handoff automation',
+      status: 'healthy',
+      evidence: 'OpenClaw tasks + cron + local workflows',
+    },
+    {
+      id: 'dashboard-control',
+      name: 'Dashboard Control',
+      owner: 'Nova Ops Dashboard',
+      purpose: 'monitor jobs, agents, sessions, tasks, verification, blocker',
+      status: 'healthy',
+      evidence: 'nova-ops-dashboard /api/team-control',
+    },
+  ];
+
+  const roster = agents.map(agent => ({
+    id: agent.id,
+    name: agent.identityName || agent.id,
+    emoji: agent.identityEmoji || '🤖',
+    role: mapAgentRole(agent),
+    model: agent.model || '',
+    workspace: agent.workspace || '',
+    isDefault: Boolean(agent.isDefault),
+  }));
+
+  const runningTasks = tasks.filter(t => t.status === 'running' || t.status === 'queued');
+  const failedTasks = tasks.filter(t => t.status === 'failed' || t.status === 'blocked');
+  const passedReports = reports.filter(r => r.passed).length;
+  const failedReports = reports.length - passedReports;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: 'read-only control room v1',
+    summary: {
+      roles: roles.length,
+      registeredAgents: roster.length,
+      activeSessions: sessionsRaw.count || sessions.length,
+      runningTasks: runningTasks.length,
+      recentReports: reports.length,
+      passedReports,
+      failedReports,
+    },
+    health: failedTasks.length || failedReports ? 'warning' : runningTasks.length ? 'healthy' : 'healthy',
+    roles,
+    roster,
+    live: {
+      sessions: sessions.slice(0, 6),
+      runningTasks: runningTasks.slice(0, 6),
+      failedTasks: failedTasks.slice(0, 6),
+    },
+    reports,
+    playbooks,
+    routerRules: [
+      'Repo/web intake -> Repo Reader -> QA / Verification -> memory/playbook artifact',
+      'Feature/app build -> Senior Full Stack Developer -> QA / Verification -> dashboard/report closeout',
+      'Incident/support issue -> Support / RCA -> evidence timeline -> prevention actions',
+      'Code/dashboard change -> Dashboard Builder/DevOps -> nova-verify-task closeout',
+      'Repeated QA failure 3 times -> escalation report for Nick approval',
+    ],
+    nextActions: [
+      'Add write-side task intake form with explicit human approval before external actions',
+      'Add allowlisted specialist roster instead of installing large third-party agent packs wholesale',
+      'Attach verification report links to every completed routed task',
+    ],
+    errors: {
+      agents: agentsRaw.error || null,
+      sessions: sessionsRaw.error || null,
+      tasks: tasksRaw.error || null,
+    },
+  };
 }
 
 async function collectJobRuns() {
@@ -1091,6 +1447,133 @@ async function collectTokenSessions() {
     totalTokens,
     items,
     note: 'Shows local session token usage for the last 5 hours. Use this to catch main/channel/cron sessions that are consuming premium model quota.',
+  };
+}
+
+async function fileStats(file, label) {
+  try {
+    const text = await fsp.readFile(file, 'utf8');
+    return {
+      label,
+      file: file.replace(WORKSPACE + '/', '').replace('/Users/nova/.openclaw/', '~/.openclaw/'),
+      exists: true,
+      chars: text.length,
+      approxTokens: Math.max(1, Math.ceil(text.length / 4)),
+    };
+  } catch {
+    return {
+      label,
+      file: file.replace(WORKSPACE + '/', '').replace('/Users/nova/.openclaw/', '~/.openclaw/'),
+      exists: false,
+      chars: 0,
+      approxTokens: 0,
+    };
+  }
+}
+
+async function collectContextBudget() {
+  const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
+  const defaults = config?.agents?.defaults || {};
+  const entries = config?.skills?.entries || {};
+  const skillLimits = config?.skills?.limits || {};
+  const enabledSkills = Object.values(entries).filter(v => v && v.enabled !== false).length;
+  const configuredSkills = Object.keys(entries).length;
+  const hotMemoryPath = path.join(WORKSPACE, 'MEMORY_HOT.md');
+
+  if (!fs.existsSync(hotMemoryPath) && fs.existsSync(NOVA_HOT_MEMORY)) {
+    await run(NOVA_HOT_MEMORY, [], 10000);
+  }
+
+  const files = await Promise.all([
+    fileStats(path.join(WORKSPACE, 'SOUL.md'), 'SOUL'),
+    fileStats(path.join(WORKSPACE, 'USER.md'), 'USER'),
+    fileStats(path.join(WORKSPACE, 'IDENTITY.md'), 'IDENTITY'),
+    fileStats(path.join(WORKSPACE, 'TOOLS.md'), 'TOOLS'),
+    fileStats(path.join(WORKSPACE, 'HEARTBEAT.md'), 'HEARTBEAT'),
+    fileStats(hotMemoryPath, 'MEMORY_HOT'),
+    fileStats(path.join(WORKSPACE, 'MEMORY.md'), 'MEMORY full'),
+    fileStats(path.join(WORKSPACE, 'AGENTS.md'), 'AGENTS'),
+    fileStats(path.join(WORKSPACE, 'COMPRESSION.md'), 'COMPRESSION'),
+  ]);
+
+  const firstTurn = files
+    .filter(item => ['SOUL', 'USER', 'MEMORY_HOT', 'COMPRESSION'].includes(item.label))
+    .reduce((sum, item) => sum + item.approxTokens, 0);
+  const fullMemory = files.find(item => item.label === 'MEMORY full')?.approxTokens || 0;
+  const firstTurnWithFullMemory = firstTurn + fullMemory;
+  const savedByHotMemory = Math.max(0, firstTurnWithFullMemory - firstTurn);
+  const bootstrapMaxChars = Number(defaults.bootstrapMaxChars || 0);
+  const bootstrapTotalMaxChars = Number(defaults.bootstrapTotalMaxChars || 0);
+  const bootstrapFiles = files.filter(item => ['SOUL', 'USER', 'IDENTITY', 'TOOLS', 'HEARTBEAT', 'MEMORY full', 'AGENTS'].includes(item.label));
+  let estimatedBootstrapInjectedChars = 0;
+  for (const item of bootstrapFiles) {
+    const perFile = bootstrapMaxChars ? Math.min(item.chars, bootstrapMaxChars) : item.chars;
+    const remaining = bootstrapTotalMaxChars ? Math.max(0, bootstrapTotalMaxChars - estimatedBootstrapInjectedChars) : perFile;
+    estimatedBootstrapInjectedChars += Math.min(perFile, remaining);
+  }
+  const bootstrapCapPercent = bootstrapTotalMaxChars ? Math.round((estimatedBootstrapInjectedChars / bootstrapTotalMaxChars) * 100) : 0;
+  const firstTurnBudgetTokens = 12000;
+  const warnTokens = 25000;
+  const budgetPercent = firstTurnBudgetTokens ? Math.round((firstTurn / firstTurnBudgetTokens) * 100) : 0;
+
+  let status = 'healthy';
+  let statusLabel = 'Budget controlled';
+  const risks = [];
+  if (firstTurn > firstTurnBudgetTokens) {
+    status = 'critical';
+    statusLabel = 'First-turn budget exceeded';
+    risks.push('Compact first-turn files exceed the configured local budget.');
+  } else if (firstTurn > firstTurnBudgetTokens * 0.75 || bootstrapTotalMaxChars > 60000) {
+    status = 'warning';
+    statusLabel = 'Watch context growth';
+    risks.push('First-turn context is within budget but close enough to monitor.');
+  }
+  if (bootstrapCapPercent >= 95) {
+    risks.push('Runtime bootstrap is hitting the configured total cap; this is intentional but means late bootstrap files may be truncated.');
+    if (status === 'healthy') {
+      status = 'warning';
+      statusLabel = 'Cap active';
+    }
+  }
+  if (configuredSkills > 40) risks.push('Skills catalog is large; defer full SKILL.md reads until request match.');
+  if (defaults.contextInjection === 'always') risks.push('OpenClaw context injection is still always-on; bootstrap caps now limit blast radius.');
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status,
+    statusLabel,
+    source: 'local-files + ~/.openclaw/openclaw.json',
+    firstTurnBudgetTokens,
+    warnTokens,
+    approxFirstTurnTokens: firstTurn,
+    approxFirstTurnWithFullMemoryTokens: firstTurnWithFullMemory,
+    savedByHotMemoryTokens: savedByHotMemory,
+    budgetPercent,
+    bootstrap: {
+      contextInjection: defaults.contextInjection || 'unknown',
+      bootstrapMaxChars,
+      bootstrapTotalMaxChars,
+      approxBootstrapMaxTokens: bootstrapMaxChars ? Math.ceil(bootstrapMaxChars / 4) : 0,
+      approxBootstrapTotalMaxTokens: bootstrapTotalMaxChars ? Math.ceil(bootstrapTotalMaxChars / 4) : 0,
+      estimatedInjectedChars: estimatedBootstrapInjectedChars,
+      approxEstimatedInjectedTokens: Math.ceil(estimatedBootstrapInjectedChars / 4),
+      capPercent: bootstrapCapPercent,
+    },
+    startupContext: defaults.startupContext || {},
+    contextLimits: defaults.contextLimits || {},
+    skills: {
+      configured: configuredSkills,
+      enabled: enabledSkills,
+      maxSkillsPromptChars: Number(skillLimits.maxSkillsPromptChars || 0),
+      policy: 'Inject names/categories only; load SKILL.md on request match.',
+    },
+    files,
+    risks,
+    commands: [
+      'bin/nova-hot-memory',
+      'bin/nova-context-slimmer /path/to/context.txt --budget-tokens 12000',
+      'bin/nova-token-budget-report --hours 5',
+    ],
   };
 }
 
@@ -1616,8 +2099,8 @@ async function collect() {
     generatedAt: new Date().toISOString(),
     overall: services.some(s => s.status === 'critical') ? 'critical' : services.some(s => s.status === 'warning') ? 'warning' : 'healthy',
     summary: {
-      sessions: sessionsMatch?.[1]?.trim() || 'see raw status',
-      tasks: tasksMatch?.[1]?.trim() || (tasks.ok ? 'task command ok' : 'task command unavailable'),
+      sessions: sessionsMatch?.[1]?.split('·')?.[0]?.trim() || 'see raw status',
+      tasks: tasksMatch?.[1]?.split('·')?.[0]?.trim() || (tasks.ok ? 'task command ok' : 'task command unavailable'),
       heartbeat: heartbeatMatch?.[1]?.trim() || 'unknown',
       guardChecks: healthChecks.length,
       recentRestarts: restarts.length,
@@ -1704,6 +2187,11 @@ const server = http.createServer(async (req, res) => {
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
+  if (url.pathname === '/api/telegram-health') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('telegram-health', TTL.telegramHealth, collectTelegramHealth, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
   if (url.pathname === '/api/grafana-mcp') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('grafana-mcp', TTL.grafanaMcp, collectGrafanaMcp, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
@@ -1726,6 +2214,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/token-sessions') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('token-sessions', TTL.tokenSessions, collectTokenSessions, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
+    return;
+  }
+  if (url.pathname === '/api/context-budget') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('context-budget', TTL.contextBudget, collectContextBudget, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
     return;
   }
@@ -1766,6 +2259,22 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  if (url.pathname === '/api/run-verification') {
+    try {
+      const taskId = `manual-verify-${Date.now()}`;
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-verify-task');
+      const result = await run('python3', [
+        scriptPath,
+        taskId,
+        '--summary',
+        'Tactical manual verification from Commander Cockpit',
+      ], 45000);
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, taskId, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
   if (url.pathname === '/api/harness') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('harness', TTL.harness, collectHarness, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
@@ -1795,6 +2304,26 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/platform-docs') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('platform-docs', TTL.platformDocs, collectPlatformDocs, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ docs: [], error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/agents') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('agents', TTL.agents, collectAgents, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/team-control') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('team-control', TTL.teamControl, collectTeamControl, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/active-tasks') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('active-tasks', TTL.activeTasks, collectActiveTasks, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/active-sessions') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('active-sessions', TTL.activeSessions, collectActiveSessions, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
   const file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');

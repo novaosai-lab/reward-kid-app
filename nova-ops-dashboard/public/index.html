@@ -16,7 +16,7 @@
   <!-- Sci-Fi Ambient Backdrops -->
   <div class="grid-backdrop"></div>
   <div class="scanline"></div>
-  
+
   <div class="app-container">
     <!-- Left Sidebar Menu -->
     <aside class="sidebar" aria-label="Tactical Navigation">
@@ -24,12 +24,17 @@
         <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
         <h1>Nova Ops <span class="version-badge">v1.3.2</span></h1>
       </div>
-      
+
       <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
         <button class="tab-btn active" data-tab="telemetry">
           <span class="tab-glow"></span>
           <span class="tab-icon">⚡</span>
           <span>Core Telemetry</span>
+        </button>
+        <button class="tab-btn" data-tab="agents">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">🤖</span>
+          <span>Agents & Tasks</span>
         </button>
         <button class="tab-btn" data-tab="integrations">
           <span class="tab-glow"></span>
@@ -67,7 +72,7 @@
           <span>Architecture</span>
         </button>
       </nav>
-      
+
       <div class="theme-selector">
         <span class="theme-label">HUD Color Profile</span>
         <div class="theme-dots">
@@ -77,7 +82,7 @@
           <button class="theme-dot" data-theme="green" style="background: #00ffaa;" title="Toxic Green" aria-label="Switch HUD theme to Toxic Green"></button>
         </div>
       </div>
-      
+
       <div class="sidebar-footer">
         <span class="security-status"><span class="dot healthy"></span> SECURE MODE</span>
         <span class="muted">Read-Only Telemetry Ingress</span>
@@ -102,6 +107,10 @@
             <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; transform: scale(1.1);"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
             <span>Focus Mode</span>
           </button>
+          <button id="sim-toggle" class="icon-btn sim-toggle" type="button" title="Toggle processing visual animation simulation">
+            <svg class="sim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; transform: scale(1.1);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span>Simulate Run</span>
+          </button>
           <button id="sound-toggle" class="icon-btn sound-toggle" type="button" title="Play Nova introduction">
             <svg class="sound-icon sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 5a9 9 0 0 1 0 14"></path></svg>
             <span>Intro</span>
@@ -123,12 +132,12 @@
             </div>
             <p>Operational command center for verified gateway health, guard events, alert pathways, workflow evidence, and incident candidates. Secure read-only posture is active.</p>
           </div>
-          
+
           <div class="agent-map holo-display" aria-label="Holographic OpenClaw agent display">
             <!-- Sci-fi Corner Brackets -->
             <div class="cyber-bracket bracket-left"></div>
             <div class="cyber-bracket bracket-right"></div>
-            
+
             <!-- Jarvis HUD Diagnostics Overlay (Left side) -->
             <div class="hud-panel hud-left" aria-hidden="true">
               <div class="hud-data-row"><span class="hud-label">LOC</span><span class="hud-val">BK_TH:SYS</span></div>
@@ -136,7 +145,7 @@
               <div class="hud-data-row"><span class="hud-label">PING</span><span class="hud-val">NOT WIRED</span></div>
               <div class="hud-data-row"><span class="hud-label">CPU_LOAD</span><span class="hud-val">NOT WIRED</span></div>
             </div>
-            
+
             <!-- Jarvis HUD Diagnostics Overlay (Right side) -->
             <div class="hud-panel hud-right" aria-hidden="true">
               <div class="hud-data-row"><span class="hud-label">STATUS</span><span class="hud-val text-green">ONLINE</span></div>
@@ -159,13 +168,13 @@
                 <strong>SYS_OK</strong>
               </div>
             </div>
-            
+
             <div class="link-wrapper link-left">
               <div class="link"></div>
               <span class="data-pulse"></span>
               <span class="connection-wave"></span>
             </div>
-            
+
             <div class="holo-stage" aria-hidden="true" style="pointer-events: auto;">
               <!-- Holographic Rotating Concentric HUD Rings -->
               <div class="holo-hud-ring ring-outer"></div>
@@ -175,13 +184,13 @@
               <div class="holo-core-glow"></div>
               <div id="nova-3d-canvas-container" style="width: 100%; height: 100%;"></div>
             </div>
-            
+
             <div class="link-wrapper link-right">
               <div class="link"></div>
               <span class="data-pulse"></span>
               <span class="connection-wave"></span>
             </div>
-            
+
             <div class="node-wrapper guard-node-wrapper">
               <div class="node guard">
                 <span class="node-glow"></span>
@@ -195,7 +204,7 @@
                 <strong>ACTIVE</strong>
               </div>
             </div>
-            
+
             <!-- Bottom Holographic Readout & Audio Visualizer -->
             <div class="holo-readout" aria-hidden="true">
               <div class="readout-left">
@@ -249,7 +258,7 @@
             </div>
             <div id="services" class="service-list"></div>
           </div>
-          
+
           <div class="card card-tech" data-nova-id="alert-routes">
             <div class="section-head">
               <h2>Alert Routes</h2>
@@ -274,7 +283,7 @@
             <div id="guard" class="timeline"></div>
           </div>
         </div>
-        
+
         <div class="right">
           <div class="card card-tech">
             <div class="section-head">
@@ -283,7 +292,7 @@
             </div>
             <div id="channels" class="chips"></div>
           </div>
-          
+
           <div class="card card-tech">
             <div class="section-head">
               <h2>Admin Actions</h2>
@@ -305,7 +314,7 @@
             </div>
             <p class="muted admin-disclaimer">Next version can add actions with confirmation, auth token, rate limits and full audit logging.</p>
           </div>
-          
+
           <div class="card card-tech console-card">
             <div class="section-head">
               <h2>Diagnostic Console</h2>
@@ -318,10 +327,50 @@
         </div>
       </div>
     </div>
-    
+
+    <!-- Tab Panel: Agents & Tasks -->
+    <div id="tab-agents" class="tab-panel">
+      <div class="layout-grid-2">
+        <!-- Nova Commander Cockpit -->
+        <div id="team-control-room" class="col-span-2"></div>
+
+        <div class="card card-tech" data-nova-id="configured-agents">
+          <div class="section-head">
+            <h2>Configured Agents</h2>
+            <span>Configured agents inside this OpenClaw workspace</span>
+          </div>
+          <div id="configured-agents" class="agents-list" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="card card-tech" data-nova-id="active-sessions">
+          <div class="section-head">
+            <h2>Active Sessions</h2>
+            <span>Direct and cron agent conversation threads</span>
+          </div>
+          <div id="active-sessions" class="sessions-list" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="active-tasks">
+          <div class="section-head">
+            <h2>Running Background Tasks</h2>
+            <span>Live execution pressure and recent background task runs</span>
+          </div>
+          <div id="active-tasks" class="tasks-list" style="margin-top: 15px;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Tab Panel: Integrations -->
     <div id="tab-integrations" class="tab-panel">
       <div class="layout-grid-2">
+        <div class="card card-tech col-span-2" data-nova-id="telegram-health">
+          <div class="section-head">
+            <h2>Telegram Responsiveness Alert</h2>
+            <span>Bridge · Gateway · First Token · Delivery Latency</span>
+          </div>
+          <div id="telegram-health" class="telegram-health"></div>
+        </div>
+
         <div class="card card-tech" data-nova-id="grafana-mcp">
           <div class="section-head">
             <h2>Grafana MCP</h2>
@@ -329,7 +378,7 @@
           </div>
           <div id="grafana-mcp" class="grafana-mcp"></div>
         </div>
-        
+
         <div class="card card-tech" data-nova-id="web-inventory">
           <div class="section-head">
             <h2>Web Inventory</h2>
@@ -390,7 +439,15 @@
           </div>
           <div id="token-sessions" class="token-sessions"></div>
         </div>
-        
+
+        <div class="card card-tech col-span-2" data-nova-id="context-budget">
+          <div class="section-head">
+            <h2>First-Call Context Budget</h2>
+            <span>Hot Memory · Bootstrap Caps · Deferred Skills · Slimmer Gate</span>
+          </div>
+          <div id="context-budget" class="token-sessions"></div>
+        </div>
+
         <div class="card card-tech">
           <div class="section-head">
             <h2>Harness Quality Gate</h2>
@@ -446,7 +503,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="right">
           <div class="card card-tech">
             <div class="section-head">
@@ -478,7 +535,7 @@
             <div id="platform-docs" class="platform-docs"></div>
           </div>
         </div>
-        
+
         <div class="right">
           <div class="card card-tech">
             <div class="section-head">
@@ -487,7 +544,7 @@
             </div>
             <ol id="roadmap" class="tech-list"></ol>
           </div>
-          
+
           <details class="card card-tech raw-details">
             <summary>Raw OpenClaw Status <span class="toggle-indicator"></span></summary>
             <pre id="raw">—</pre>
@@ -517,9 +574,9 @@
   </main>
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
-  
+
   <script src="app.js?v=1.3.2" defer></script>
-  
+
   <!-- Interactive Command Center Scripts -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -557,14 +614,14 @@
       // Tab Switching controller
       const tabBtns = document.querySelectorAll('.tab-btn');
       const tabPanels = document.querySelectorAll('.tab-panel');
-      
+
       tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
           const targetTab = btn.getAttribute('data-tab');
-          
+
           tabBtns.forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          
+
           tabPanels.forEach(panel => {
             if (panel.id === `tab-${targetTab}`) {
               panel.classList.add('active');
@@ -577,7 +634,7 @@
           if (typeof playCommandSound === 'function') {
             playCommandSound('confirm');
           }
-          
+
           appendConsoleLog(`Switched view to segment: [${targetTab.toUpperCase()}]`);
           if (targetTab === 'architecture' && typeof window.redrawArchitecture === 'function') {
             setTimeout(window.redrawArchitecture, 50);
@@ -588,7 +645,7 @@
       // HUD Theme Selector Controller
       const themeDots = document.querySelectorAll('.theme-dot');
       const savedTheme = localStorage.getItem('nova-ops-theme') || 'cyan';
-      
+
       // Apply saved theme profile
       document.body.classList.add(`theme-${savedTheme}`);
       themeDots.forEach(dot => {
@@ -598,28 +655,28 @@
           dot.classList.remove('active');
         }
       });
-      
+
       themeDots.forEach(dot => {
         dot.addEventListener('click', () => {
           const theme = dot.getAttribute('data-theme');
-          
+
           // Reset theme classes on body
           document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
           document.body.classList.add(`theme-${theme}`);
-          
+
           themeDots.forEach(d => d.classList.remove('active'));
           dot.classList.add('active');
-          
+
           localStorage.setItem('nova-ops-theme', theme);
-          
+
           if (typeof update3DColor === 'function') {
             update3DColor();
           }
-          
+
           if (typeof playCommandSound === 'function') {
             playCommandSound('confirm');
           }
-          
+
           appendConsoleLog(`HUD Color Profile re-skinned to: [${theme.toUpperCase()}]`);
         });
       });
@@ -668,7 +725,7 @@
         logLine.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${esc(msg)}</span>`;
         consoleEl.appendChild(logLine);
         consoleEl.scrollTop = consoleEl.scrollHeight;
-        
+
         while (consoleEl.children.length > 25) {
           consoleEl.removeChild(consoleEl.firstChild);
         }
@@ -695,7 +752,7 @@
         let logTimeout = null;
         searchInput.addEventListener('input', (e) => {
           const q = e.target.value.toLowerCase().trim();
-          
+
           if (q) {
             document.body.classList.add('searching');
           } else {
@@ -707,7 +764,7 @@
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? 'grid' : 'none';
           });
-          
+
           // Filter Grafana Items
           document.querySelectorAll('.grafana-item').forEach(el => {
             const text = el.textContent.toLowerCase();
@@ -719,13 +776,13 @@
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? 'block' : 'none';
           });
-          
+
           // Filter Web Items
           document.querySelectorAll('.web-item').forEach(el => {
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? 'block' : 'none';
           });
-          
+
           // Filter Alert Routes
           document.querySelectorAll('.alert-route').forEach(el => {
             const text = el.textContent.toLowerCase();
@@ -736,7 +793,7 @@
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? '' : 'none';
           });
-          
+
           // Filter Harness Checks
           document.querySelectorAll('.check').forEach(el => {
             const text = el.textContent.toLowerCase();
@@ -748,7 +805,7 @@
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? 'block' : 'none';
           });
-          
+
           // Filter Guard Timeline Items
           document.querySelectorAll('.timeline-item').forEach(el => {
             const text = el.textContent.toLowerCase();

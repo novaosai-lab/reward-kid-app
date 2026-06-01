@@ -1,4 +1,4 @@
-/* 
+/*
  * Nova Ops Command Center Stylesheet
  * Vibe: Premium tactical dark, hyper-dense operational intelligence, cybernetic glassmorphism.
  */
@@ -11,10 +11,10 @@
   --panel-elevated: 222, 40%, 11%;  /* #0b111e */
   --line-cyan: 185, 100%, 50%;      /* #00f0ff */
   --line-purple: 255, 100%, 75%;    /* #80a0ff */
-  
+
   --text-primary: #eef6ff;
   --text-muted: #a8bccc; /* Enhanced contrast for accessibility (WCAG AA compliance) */
-  
+
   /* Cyber Colors */
   --cyan: #00f0ff;
   --cyan-glow: rgba(0, 240, 255, 0.4);
@@ -26,7 +26,7 @@
   --rose-glow: rgba(255, 71, 102, 0.45);
   --purple: #8b8cff;
   --purple-glow: rgba(139, 140, 255, 0.4);
-  
+
   --border-dim: rgba(0, 240, 255, 0.08);
   --border-medium: rgba(0, 240, 255, 0.16);
   --border-bright: rgba(0, 240, 255, 0.35);
@@ -105,7 +105,7 @@ body {
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   min-height: 100vh;
   line-height: 1.5;
-  background-image: 
+  background-image:
     radial-gradient(circle at 50% 0%, var(--ambient-glow) 0%, transparent 600px),
     radial-gradient(circle at 100% 30%, rgba(139, 140, 255, 0.04) 0%, transparent 500px),
     linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(var(--bg-deep)) 100%);
@@ -120,7 +120,7 @@ body {
   pointer-events: none;
   z-index: -1;
   background-size: 50px 50px;
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(0, 240, 255, 0.02) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
   mask-image: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.15) 80%, transparent 100%);
@@ -160,9 +160,9 @@ body {
 }
 
 /* Keyboard Navigation Accessibility Focus Outlines */
-button:focus-visible, 
-input:focus-visible, 
-select:focus-visible, 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 .tab-btn:focus-visible,
 .theme-dot:focus-visible {
@@ -557,13 +557,13 @@ main {
   --holo-amber: #ff9a00;
   --holo-amber-glow: rgba(255, 154, 0, 0.55);
   --holo-rose: #ff4766;
-  
+
   --holo-theme-cyan: var(--holo-cyan);
   --holo-theme-cyan-glow: var(--holo-cyan-glow);
   --holo-theme-green: var(--holo-green);
   --holo-theme-green-glow: var(--holo-green-glow);
   --holo-theme-purple: var(--holo-purple);
-  
+
   --speed-outer: 32s;
   --speed-mid: 16s;
   --speed-inner: 8s;
@@ -580,7 +580,7 @@ main {
   background:
     radial-gradient(ellipse at 50% 85%, rgba(0, 240, 255, 0.12) 0%, rgba(0, 240, 255, 0.03) 45%, transparent 75%),
     linear-gradient(180deg, rgba(2, 6, 12, 0.82) 0%, rgba(1, 3, 7, 0.95) 100%);
-  box-shadow: 
+  box-shadow:
     inset 0 0 30px rgba(0, 240, 255, 0.04),
     0 12px 36px rgba(0, 0, 0, 0.6);
   overflow: hidden;
@@ -593,16 +593,16 @@ main {
   background:
     radial-gradient(ellipse at 50% 85%, rgba(255, 154, 0, 0.15) 0%, rgba(255, 154, 0, 0.04) 45%, transparent 75%),
     linear-gradient(180deg, rgba(8, 5, 2, 0.85) 0%, rgba(3, 2, 1, 0.96) 100%);
-  box-shadow: 
+  box-shadow:
     inset 0 0 35px rgba(255, 154, 0, 0.08),
     0 12px 36px rgba(255, 154, 0, 0.08);
-  
+
   --holo-theme-cyan: var(--holo-amber);
   --holo-theme-cyan-glow: var(--holo-amber-glow);
   --holo-theme-green: var(--holo-rose);
   --holo-theme-green-glow: rgba(255, 71, 102, 0.55);
   --holo-theme-purple: var(--holo-rose);
-  
+
   --speed-outer: 8s;
   --speed-mid: 4s;
   --speed-inner: 2s;
@@ -616,7 +616,7 @@ main {
   z-index: 1;
   pointer-events: none;
   opacity: 0.35;
-  background: 
+  background:
     repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.06) 0 1px, transparent 1px 7px),
     radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.05), transparent 70%);
   mix-blend-mode: screen;
@@ -626,7 +626,7 @@ main {
 
 .holo-display.speaking::before {
   opacity: 0.45;
-  background: 
+  background:
     repeating-linear-gradient(0deg, rgba(255, 154, 0, 0.08) 0 1px, transparent 1px 5px),
     radial-gradient(circle at 50% 50%, rgba(255, 154, 0, 0.06), transparent 70%);
   animation-duration: 2s;
@@ -2247,6 +2247,128 @@ main {
   font-weight: 900;
 }
 
+/* Telegram Responsiveness Alert */
+.telegram-health {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.telegram-alert-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 6px;
+  background: rgba(2, 4, 10, 0.42);
+  border: 1px solid rgba(0, 240, 255, 0.12);
+}
+
+.telegram-alert-head > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.telegram-alert-head strong {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 16px;
+  color: #fff;
+}
+
+.telegram-alert-head p {
+  grid-column: 2;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.telegram-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.telegram-metrics div {
+  min-height: 74px;
+  padding: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.018);
+  border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.telegram-metrics span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.telegram-metrics strong {
+  display: block;
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--cyan);
+  overflow-wrap: anywhere;
+}
+
+.telegram-reasons {
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: rgba(0, 240, 255, 0.025);
+  border: 1px solid rgba(0, 240, 255, 0.1);
+}
+
+.telegram-reasons strong {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  color: #fff;
+}
+
+.telegram-reasons ul {
+  margin: 8px 0 0 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.telegram-events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.telegram-event {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(2, 4, 10, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.telegram-event.warning { border-color: rgba(255, 208, 0, 0.22); }
+.telegram-event.critical { border-color: rgba(255, 71, 102, 0.28); }
+
+.telegram-event span {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.telegram-event code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #d8f8ff;
+  font-size: 11px;
+}
+
 /* Harness Automation Quality Gate */
 .harness-summary {
   margin-bottom: 12px;
@@ -2537,9 +2659,9 @@ main {
   border-radius: 6px;
   border: 1px solid rgba(0, 240, 255, 0.06);
   background: linear-gradient(
-    90deg, 
-    rgba(255, 255, 255, 0.01) 25%, 
-    rgba(0, 240, 255, 0.04) 37%, 
+    90deg,
+    rgba(255, 255, 255, 0.01) 25%,
+    rgba(0, 240, 255, 0.04) 37%,
     rgba(255, 255, 255, 0.01) 63%
   );
   background-size: 400% 100%;
@@ -2898,12 +3020,12 @@ body.searching .card.has-search-match {
     padding: 16px;
     gap: 12px;
   }
-  
+
   .search-container {
     width: auto;
     margin: 0;
   }
-  
+
   .top-actions {
     justify-content: space-between;
     flex-wrap: wrap;
@@ -2919,7 +3041,7 @@ body.searching .card.has-search-match {
     justify-content: center;
     min-width: 0;
   }
-  
+
   .hero {
     flex-direction: column;
     align-items: center;
@@ -2937,7 +3059,7 @@ body.searching .card.has-search-match {
     line-height: 1.35;
     flex-wrap: wrap;
   }
-  
+
   .agent-map {
     width: 100%;
     margin-top: 16px;
@@ -3023,11 +3145,11 @@ body.searching .card.has-search-match {
   .hud-panel, .node-hud-tag {
     display: none;
   }
-  
+
   .app-container {
     flex-direction: column;
   }
-  
+
   .sidebar {
     width: 100%;
     height: auto;
@@ -3036,7 +3158,7 @@ body.searching .card.has-search-match {
     padding: 16px;
     position: static;
   }
-  
+
   .sidebar .brand {
     margin-bottom: 12px;
     padding-bottom: 8px;
@@ -3045,12 +3167,12 @@ body.searching .card.has-search-match {
     align-items: center;
     border-bottom: none;
   }
-  
+
   .sidebar .brand h1 {
     font-size: 18px;
     margin: 0;
   }
-  
+
   .cyber-tabs-vertical {
     flex-direction: row;
     overflow-x: auto;
@@ -3060,11 +3182,11 @@ body.searching .card.has-search-match {
     padding-bottom: 4px;
     scrollbar-width: none;
   }
-  
+
   .cyber-tabs-vertical::-webkit-scrollbar {
     display: none;
   }
-  
+
   .cyber-tabs-vertical .tab-btn {
     padding: 8px 12px;
     font-size: 11px;
@@ -3073,7 +3195,7 @@ body.searching .card.has-search-match {
     border-left: 1px solid rgba(255, 255, 255, 0.02);
     border-bottom: 2px solid transparent;
   }
-  
+
   .cyber-tabs-vertical .tab-btn::before {
     left: 0;
     right: 0;
@@ -3085,21 +3207,21 @@ body.searching .card.has-search-match {
     transform-origin: center;
     transform-style: flat;
   }
-  
+
   .cyber-tabs-vertical .tab-btn.active {
     border-left-color: rgba(0, 240, 255, 0.12);
     border-bottom-color: var(--cyan);
   }
-  
+
   .cyber-tabs-vertical .tab-btn.active::before {
     transform: scaleX(1);
     transform: scaleY(0); /* override parent vertical scale */
   }
-  
+
   .sidebar-footer {
     display: none;
   }
-  
+
   .grid4, .support-kpis, .support-charts, .grafana-mcp, .quota-grid, .quota-windows, .command-grid, .command-summary {
     grid-template-columns: 1fr;
   }
@@ -3133,7 +3255,7 @@ body.searching .card.has-search-match {
   .incident-head > span:last-child {
     margin-left: 0;
   }
-  
+
   .metric {
     min-height: 90px;
   }
@@ -3176,6 +3298,18 @@ body.focus-mode .holo-core-glow {
 .top-actions button.focus-toggle.active:hover {
   background: rgba(0, 255, 170, 0.25) !important;
   box-shadow: 0 0 15px rgba(0, 255, 170, 0.4) !important;
+}
+
+.top-actions button.sim-toggle.active {
+  background: rgba(217, 70, 239, 0.15) !important;
+  border-color: #d946ef !important;
+  color: #d946ef !important;
+  box-shadow: 0 0 10px rgba(217, 70, 239, 0.2) !important;
+}
+
+.top-actions button.sim-toggle.active:hover {
+  background: rgba(217, 70, 239, 0.25) !important;
+  box-shadow: 0 0 15px rgba(217, 70, 239, 0.4) !important;
 }
 
 /* Disabled Actions Lock Styling */
@@ -3261,9 +3395,14 @@ body.focus-mode .holo-core-glow {
   align-items: flex-start;
 }
 
+.jobrun-head > div {
+  min-width: 0;
+}
+
 .jobrun-head strong,
 .jobrun-head span {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .jobrun-head strong {
@@ -3284,7 +3423,579 @@ body.focus-mode .holo-core-glow {
   overflow-wrap: anywhere;
 }
 
+.team-control-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.team-control-summary > div,
+.team-role {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.48);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.team-control-summary span,
+.team-role span,
+.team-role small,
+.team-rules {
+  color: var(--muted);
+}
+
+.team-control-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.team-control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.team-control-grid h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--cyan);
+  letter-spacing: 0;
+}
+
+.team-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.team-role-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.team-role-head strong {
+  display: block;
+  color: var(--text);
+}
+
+.team-role p {
+  margin: 10px 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.team-rules {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  line-height: 1.55;
+}
+
+.team-playbooks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.commander-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.commander-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(0, 240, 255, 0.12), transparent 34%),
+    radial-gradient(circle at 80% 10%, rgba(255, 94, 58, 0.09), transparent 24%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.22), rgba(2, 6, 23, 0.82));
+  opacity: 0.9;
+}
+
+.commander-cockpit {
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(0, 240, 255, 0.16);
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(3, 7, 18, 0.84), rgba(15, 23, 42, 0.68)),
+    repeating-linear-gradient(90deg, rgba(0, 240, 255, 0.045) 0 1px, transparent 1px 46px);
+  box-shadow: inset 0 0 46px rgba(0, 240, 255, 0.08), 0 0 42px rgba(0, 0, 0, 0.28);
+}
+
+.cockpit-command-bar,
+.cockpit-hero-grid,
+.cockpit-analytics-grid,
+.cockpit-lower-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.cockpit-command-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.cockpit-brand,
+.cockpit-health-strip,
+.cockpit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.claw-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(0, 240, 255, 0.42);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.22), inset 0 0 12px rgba(255, 122, 24, 0.12);
+}
+
+.cockpit-brand strong,
+.cockpit-route-card strong {
+  display: block;
+  color: var(--text);
+}
+
+.cockpit-brand small,
+.cockpit-route-card small,
+.cockpit-console-footer small {
+  color: var(--muted);
+}
+
+.cockpit-health-strip {
+  flex-wrap: wrap;
+}
+
+.cockpit-chip,
+.cockpit-action,
+.cockpit-legend {
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.68);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.cockpit-chip.healthy,
+.cockpit-chip.active,
+.cockpit-legend.healthy,
+.cockpit-legend.active {
+  border-color: rgba(0, 240, 255, 0.34);
+  color: var(--cyan);
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.12);
+}
+
+.cockpit-chip.warning,
+.cockpit-legend.warning {
+  border-color: rgba(255, 161, 51, 0.42);
+  color: #ffb86b;
+  box-shadow: 0 0 18px rgba(255, 161, 51, 0.12);
+}
+
+.cockpit-chip.critical,
+.cockpit-legend.critical {
+  border-color: rgba(255, 59, 92, 0.46);
+  color: #ff7a8f;
+  box-shadow: 0 0 18px rgba(255, 59, 92, 0.14);
+}
+
+.cockpit-actions {
+  justify-content: flex-end;
+}
+
+.cockpit-action {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.cockpit-action.primary {
+  border-color: rgba(0, 240, 255, 0.55);
+  color: #bffaff;
+  background: rgba(0, 240, 255, 0.12);
+  box-shadow: 0 0 22px rgba(0, 240, 255, 0.2);
+}
+
+.cockpit-action.danger {
+  border-color: rgba(255, 91, 54, 0.5);
+  color: #ffb199;
+  background: rgba(255, 91, 54, 0.1);
+}
+
+.cockpit-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.cockpit-network-panel,
+.cockpit-overview-panel,
+.cockpit-module,
+.cockpit-route-card {
+  min-width: 0;
+  border: 1px solid rgba(0, 240, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.62);
+  box-shadow: inset 0 0 28px rgba(0, 240, 255, 0.055);
+}
+
+.cockpit-network-panel {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+}
+
+.cockpit-panel-header {
+  display: block;
+  margin: 0 0 10px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: 'Orbitron', sans-serif;
+}
+
+.cockpit-console-panel {
+  min-width: 0;
+  border: 1px solid rgba(0, 240, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.62);
+  box-shadow: inset 0 0 28px rgba(0, 240, 255, 0.055);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  height: 400px;
+  box-sizing: border-box;
+}
+
+.cockpit-console-panel .cockpit-terminal-log {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
+
+.cockpit-console-footer {
+  margin-top: 6px;
+}
+
+.cockpit-route-card span,
+.cockpit-module h3,
+.cockpit-overview-panel h3 {
+  display: block;
+  margin: 0 0 7px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.team-agent-network {
+  position: absolute;
+  inset: 0;
+  min-height: 320px;
+  background:
+    radial-gradient(circle at center, rgba(0, 240, 255, 0.11), transparent 43%),
+    linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.5));
+}
+
+.team-agent-network canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.team-agent-network-label {
+  position: absolute;
+  left: 14px;
+  bottom: 42px;
+  padding: 7px 10px;
+  border: 1px solid rgba(0, 240, 255, 0.24);
+  border-radius: 7px;
+  color: var(--cyan);
+  background: rgba(2, 6, 23, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cockpit-network-footer {
+  position: absolute;
+  z-index: 3;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cockpit-overview-panel {
+  padding: 14px;
+}
+
+.cockpit-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.cockpit-summary > div {
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.cockpit-route-card {
+  padding: 12px;
+}
+
+.cockpit-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.cockpit-module {
+  min-height: 200px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.cockpit-mini-map {
+  position: relative;
+  height: 154px;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(0, 240, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0, 240, 255, 0.07) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(0, 240, 255, 0.12), rgba(2, 6, 23, 0.42));
+  background-size: 32px 32px, 32px 32px, 100% 100%;
+}
+
+.cockpit-mini-map i {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--cyan);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+}
+
+.cockpit-mini-map i.warning { background: #ff9f43; box-shadow: 0 0 20px rgba(255, 159, 67, 0.55); }
+.cockpit-mini-map i.critical { background: #ff3b5c; box-shadow: 0 0 20px rgba(255, 59, 92, 0.55); }
+
+.cockpit-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.cockpit-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 1.2fr) 38px;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cockpit-bar-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cockpit-bar-row i {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.cockpit-bar-row b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(0, 240, 255, 0.55), rgba(56, 189, 248, 0.9));
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+}
+
+.cockpit-bar-row b.warning { background: linear-gradient(90deg, #ff9f43, #ffd166); }
+.cockpit-bar-row b.critical { background: linear-gradient(90deg, #ff3b5c, #ff7a8f); }
+
+.cockpit-line-chart {
+  width: 100%;
+  height: 150px;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.cockpit-line-chart polyline {
+  stroke: var(--cyan);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.75));
+}
+
+.cockpit-line-chart circle {
+  fill: #ffb86b;
+  filter: drop-shadow(0 0 6px rgba(255, 184, 107, 0.7));
+}
+
+.cockpit-feed {
+  display: grid;
+  gap: 6px;
+  max-height: 152px;
+  overflow: hidden;
+}
+
+.cockpit-feed-line {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cockpit-feed-line span {
+  color: var(--cyan);
+}
+
+.cockpit-feed-line code {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.cockpit-feed-line.warning span,
+.cockpit-feed-line.warning code { color: #ffb86b; }
+.cockpit-feed-line.critical span,
+.cockpit-feed-line.critical code { color: #ff7a8f; }
+
+.cockpit-card-metrics {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.cockpit-card-metrics strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.cockpit-lower-grid {
+  padding-top: 2px;
+}
+
+@media (min-width: 1181px) {
+  .cockpit-hero-grid {
+    grid-template-columns: 2fr 1.2fr 1fr;
+    height: 400px;
+  }
+  .cockpit-network-panel,
+  .cockpit-console-panel,
+  .cockpit-overview-panel {
+    height: 400px;
+    margin: 0;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 1180px) {
+  .cockpit-command-bar,
+  .cockpit-hero-grid,
+  .cockpit-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-network-panel,
+  .cockpit-console-panel,
+  .cockpit-overview-panel {
+    height: auto !important;
+    min-height: 360px;
+    box-sizing: border-box;
+  }
+
+  .cockpit-console-panel .cockpit-terminal-log {
+    max-height: 160px;
+  }
+
+  .cockpit-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 860px) {
+  .team-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .commander-cockpit {
+    padding: 10px;
+  }
+
+  .cockpit-network-panel {
+    min-height: 360px;
+  }
+
+  .cockpit-command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
+  .telegram-alert-head {
+    flex-direction: column;
+  }
+
+  .telegram-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telegram-event {
+    grid-template-columns: 1fr;
+  }
+
   .jobrun-summary,
   .jobrun-columns {
     grid-template-columns: 1fr;
@@ -3403,4 +4114,576 @@ body.focus-mode .holo-core-glow {
   letter-spacing: 0.05em;
   font-size: 9px;
   text-transform: uppercase;
+}
+
+/* Processing / Running Task UI Animations */
+.holo-display.processing .holo-hud-ring.ring-outer {
+  animation-duration: 10s;
+  border-color: var(--holo-theme-purple);
+  box-shadow: 0 0 25px rgba(217, 70, 239, 0.15);
+}
+
+.holo-display.processing .holo-hud-ring.ring-middle {
+  animation-duration: 6s;
+  border-color: var(--holo-theme-purple);
+}
+
+.holo-display.processing .holo-hud-ring.ring-inner {
+  animation-duration: 3s;
+  border-color: var(--holo-theme-purple);
+  box-shadow: inset 0 0 30px rgba(217, 70, 239, 0.2);
+}
+
+.holo-display.processing .holo-core-glow {
+  background: radial-gradient(circle, rgba(217, 70, 239, 0.5) 0%, transparent 70%);
+  animation-duration: 1.5s;
+}
+
+.holo-display.processing .node.main {
+  border-color: #d946ef;
+  box-shadow: 0 0 25px rgba(217, 70, 239, 0.35);
+  animation: processing-glow 1.5s infinite alternate ease-in-out;
+}
+
+.holo-display.processing .node.main small {
+  color: #d946ef;
+  font-weight: 700;
+  text-shadow: 0 0 5px rgba(217, 70, 239, 0.5);
+}
+
+.holo-display.processing .node-hud-tag.tag-left {
+  border-color: #d946ef;
+}
+
+.holo-display.processing .node-hud-tag.tag-left strong {
+  color: #d946ef;
+  text-shadow: 0 0 8px rgba(217, 70, 239, 0.5);
+}
+
+.holo-display.processing .link-left .link {
+  background: linear-gradient(90deg, #d946ef, rgba(217, 70, 239, 0.15));
+}
+
+.holo-display.processing .link-left .connection-wave {
+  border-top-color: #d946ef;
+  animation-duration: 0.4s;
+}
+
+.holo-display.processing .link-left .data-pulse {
+  animation-duration: 0.5s;
+  background: #fff;
+  box-shadow: 0 0 10px #fff, 0 0 4px #d946ef;
+}
+
+.holo-display.processing .voice-visualizer {
+  opacity: 1;
+}
+
+.holo-display.processing .voice-bar {
+  background: #d946ef;
+  box-shadow: 0 0 8px rgba(217, 70, 239, 0.6);
+}
+
+.holo-display.processing .voice-bar.v-1 { animation: voice-bounce 0.4s ease-in-out infinite alternate; }
+.holo-display.processing .voice-bar.v-2 { animation: voice-bounce 0.6s ease-in-out infinite alternate 0.05s; }
+.holo-display.processing .voice-bar.v-3 { animation: voice-bounce 0.3s ease-in-out infinite alternate 0.15s; }
+.holo-display.processing .voice-bar.v-4 { animation: voice-bounce 0.5s ease-in-out infinite alternate 0.1s; }
+.holo-display.processing .voice-bar.v-5 { animation: voice-bounce 0.7s ease-in-out infinite alternate 0.02s; }
+.holo-display.processing .voice-bar.v-6 { animation: voice-bounce 0.4s ease-in-out infinite alternate 0.08s; }
+
+@keyframes processing-glow {
+  0% { transform: scale(1); box-shadow: 0 0 15px rgba(217, 70, 239, 0.2); }
+  100% { transform: scale(1.03); box-shadow: 0 0 30px rgba(217, 70, 239, 0.5); }
+}
+
+/* ==========================================
+   Nova Commander Cockpit Redesign Overlays
+   ========================================== */
+
+/* Glassmorphism Panel Base & Hover Glow */
+.cockpit-network-panel, 
+.cockpit-overview-panel, 
+.cockpit-module, 
+.cockpit-route-card, 
+.cockpit-agent-card,
+.commander-cockpit {
+  position: relative;
+  background: rgba(6, 11, 26, 0.72) !important;
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border: 1px solid rgba(0, 240, 255, 0.14) !important;
+  box-shadow: inset 0 0 24px rgba(0, 240, 255, 0.05), 0 8px 32px rgba(0, 0, 0, 0.32) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.cockpit-network-panel:hover, 
+.cockpit-overview-panel:hover, 
+.cockpit-module:hover, 
+.cockpit-route-card:hover, 
+.cockpit-agent-card:hover {
+  border-color: rgba(0, 240, 255, 0.32) !important;
+  box-shadow: inset 0 0 28px rgba(0, 240, 255, 0.1), 0 14px 38px rgba(0, 0, 0, 0.45) !important;
+  transform: translateY(-2px);
+}
+
+/* Sci-Fi HUD Corner Brackets */
+.cockpit-network-panel::before,
+.cockpit-overview-panel::before,
+.cockpit-module::before,
+.cockpit-route-card::before,
+.cockpit-agent-card::before,
+.commander-cockpit::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--cyan);
+  border-left: 2px solid var(--cyan);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cockpit-network-panel::after,
+.cockpit-overview-panel::after,
+.cockpit-module::after,
+.cockpit-route-card::after,
+.cockpit-agent-card::after,
+.commander-cockpit::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 2px solid var(--cyan);
+  border-right: 2px solid var(--cyan);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Responsive health-colored brackets */
+.commander-cockpit[data-health="warning"] .cockpit-network-panel::before,
+.commander-cockpit[data-health="warning"] .cockpit-overview-panel::before,
+.commander-cockpit[data-health="warning"] .cockpit-module::before,
+.commander-cockpit[data-health="warning"] .cockpit-route-card::before,
+.commander-cockpit[data-health="warning"] .cockpit-agent-card::before,
+.commander-cockpit[data-health="warning"]::before {
+  border-top-color: #ff9f43;
+  border-left-color: #ff9f43;
+}
+.commander-cockpit[data-health="warning"] .cockpit-network-panel::after,
+.commander-cockpit[data-health="warning"] .cockpit-overview-panel::after,
+.commander-cockpit[data-health="warning"] .cockpit-module::after,
+.commander-cockpit[data-health="warning"] .cockpit-route-card::after,
+.commander-cockpit[data-health="warning"] .cockpit-agent-card::after,
+.commander-cockpit[data-health="warning"]::after {
+  border-bottom-color: #ff9f43;
+  border-right-color: #ff9f43;
+}
+
+.commander-cockpit[data-health="critical"] .cockpit-network-panel::before,
+.commander-cockpit[data-health="critical"] .cockpit-overview-panel::before,
+.commander-cockpit[data-health="critical"] .cockpit-module::before,
+.commander-cockpit[data-health="critical"] .cockpit-route-card::before,
+.commander-cockpit[data-health="critical"] .cockpit-agent-card::before,
+.commander-cockpit[data-health="critical"]::before {
+  border-top-color: #ff3b5c;
+  border-left-color: #ff3b5c;
+}
+.commander-cockpit[data-health="critical"] .cockpit-network-panel::after,
+.commander-cockpit[data-health="critical"] .cockpit-overview-panel::after,
+.commander-cockpit[data-health="critical"] .cockpit-module::after,
+.commander-cockpit[data-health="critical"] .cockpit-route-card::after,
+.commander-cockpit[data-health="critical"] .cockpit-agent-card::after,
+.commander-cockpit[data-health="critical"]::after {
+  border-bottom-color: #ff3b5c;
+  border-right-color: #ff3b5c;
+}
+
+/* Global Mini Map Scanner Sweep */
+.cockpit-mini-map {
+  overflow: hidden;
+  border: 1px solid rgba(0, 240, 255, 0.08);
+}
+
+.cockpit-mini-map::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.7), transparent);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  animation: scanner-sweep 4s linear infinite;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes scanner-sweep {
+  0% { top: 0%; opacity: 0; }
+  5% { opacity: 1; }
+  95% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* Animated Gradient Uptime Bars */
+.cockpit-bar-row b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00f0ff 0%, #38bdf8 50%, #8b5cf6 100%);
+  background-size: 200% 100%;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+  animation: gradient-shift 6s linear infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.cockpit-bar-row b::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 16px 16px;
+  animation: move-stripes 2s linear infinite;
+}
+
+@keyframes move-stripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 32px 0; }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* CRT Phosphor Terminal Screen */
+.cockpit-terminal-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(2, 4, 10, 0.92);
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-top: 6px;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+}
+
+.terminal-prompt {
+  color: var(--cyan);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: bold;
+  font-size: 13px;
+  user-select: none;
+}
+
+#cockpit-terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: #fff;
+  padding: 0;
+  caret-color: var(--cyan);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+}
+
+.cockpit-terminal-log {
+  max-height: 120px;
+  overflow-y: auto;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 10px;
+  background: rgba(2, 4, 10, 0.88);
+  border: 1px solid rgba(0, 240, 255, 0.16);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  box-shadow: inset 0 0 16px rgba(0, 240, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Console CRT scanline simulation overlay */
+.cockpit-terminal-log::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.04));
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  z-index: 5;
+  border-radius: inherit;
+}
+
+/* Custom Scrollbar for Terminal */
+.cockpit-terminal-log::-webkit-scrollbar {
+  width: 5px;
+}
+.cockpit-terminal-log::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.cockpit-terminal-log::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.25);
+  border-radius: 3px;
+}
+
+/* Console Line Levels */
+.terminal-line {
+  word-break: break-all;
+  white-space: pre-wrap;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.1);
+}
+.terminal-line.command {
+  color: var(--cyan);
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 240, 255, 0.5);
+}
+.terminal-line.success {
+  color: #34d399; /* emerald */
+  text-shadow: 0 0 5px rgba(52, 211, 153, 0.4);
+}
+.terminal-line.warn {
+  color: #fb923c; /* orange */
+  text-shadow: 0 0 4px rgba(251, 146, 60, 0.3);
+}
+.terminal-line.error {
+  color: #f87171; /* rose */
+  text-shadow: 0 0 5px rgba(248, 113, 113, 0.4);
+}
+.terminal-line.info {
+  color: #e2e8f0;
+}
+.terminal-line.muted {
+  color: #64748b;
+}
+.terminal-line.loading {
+  color: #38bdf8;
+  animation: pulse-terminal 1.2s infinite ease-in-out;
+  text-shadow: 0 0 4px rgba(56, 189, 248, 0.4);
+}
+
+@keyframes pulse-terminal {
+  0% { opacity: 0.55; }
+  50% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+
+/* SVGs Call-Out Charts */
+.cockpit-line-chart {
+  background: 
+    linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 1px solid rgba(0, 240, 255, 0.08);
+  box-shadow: inset 0 0 12px rgba(0, 240, 255, 0.04);
+}
+
+.cockpit-line-chart polyline {
+  stroke: url(#chart-gradient);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.65));
+}
+
+.cockpit-line-chart circle {
+  fill: #00f0ff;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.95));
+  transition: all 0.2s ease;
+}
+
+.cockpit-line-chart circle:hover {
+  r: 4;
+  cursor: pointer;
+}
+
+/* 3D WebGL Holographic Network Tooltip */
+.cockpit-network-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(3, 7, 18, 0.92) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--cyan) !important;
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+  z-index: 10;
+  display: none;
+  transform: translate(-50%, -100%);
+  margin-top: -12px;
+  min-width: 140px;
+  line-height: 1.4;
+}
+
+.cockpit-network-tooltip strong {
+  display: block;
+  color: var(--cyan);
+  margin-bottom: 2px;
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 0.05em;
+}
+
+.cockpit-network-tooltip span {
+  display: block;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* Agents & Tasks UX/UI Improvements */
+.agent-config-card,
+.active-session-card,
+.active-task-card {
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(0, 240, 255, 0.08);
+  margin-bottom: 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: inset 0 0 12px rgba(0, 240, 255, 0.02);
+}
+
+.agent-config-card:hover,
+.active-session-card:hover,
+.active-task-card:hover {
+  border-color: rgba(0, 240, 255, 0.24);
+  background: rgba(2, 6, 23, 0.65);
+  box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08), inset 0 0 18px rgba(0, 240, 255, 0.04);
+  transform: translateY(-2px);
+}
+
+.agent-card-header,
+.session-card-header,
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.agent-card-title,
+.session-card-title,
+.task-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-card-title strong,
+.session-card-title strong,
+.task-card-title strong {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  color: #fff;
+}
+
+.agent-card-title span,
+.session-card-title span,
+.task-card-title span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.agent-card-grid,
+.session-card-grid,
+.task-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.agent-card-grid > div,
+.session-card-grid > div,
+.task-card-grid > div {
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.agent-card-grid span,
+.session-card-grid span,
+.task-card-grid span {
+  display: block;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 8px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.agent-card-grid strong,
+.session-card-grid strong,
+.task-card-grid strong {
+  display: block;
+  margin-top: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom visual progress bar */
+.session-token-bar {
+  height: 5px;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.session-token-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--purple-ai));
+  border-radius: 4px;
+}
+
+.session-token-bar.danger i {
+  background: linear-gradient(90deg, #ff4766, #ff7a93);
+}
+
+.task-terminal-summary {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  margin-top: 10px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.15);
+  padding-top: 8px;
+  color: #94a3b8;
+  max-height: 200px;
+  overflow-y: auto;
 }
