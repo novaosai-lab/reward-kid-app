@@ -22,7 +22,7 @@
     <aside class="sidebar" aria-label="Tactical Navigation">
       <div class="brand">
         <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
-        <h1>Nova Ops <span class="version-badge">v1.3.2</span></h1>
+        <h1>Nova Ops <span class="version-badge">v1.7</span></h1>
       </div>
 
       <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
@@ -123,6 +123,8 @@
       </header>
 
       <main>
+    <!-- Tab Panel: Core Telemetry -->
+    <div id="tab-telemetry" class="tab-panel active">
         <section class="hero card glow-cyan">
           <div class="hero-content">
             <div class="eyebrow">Overall Posture</div>
@@ -247,8 +249,6 @@
           </div>
         </section>
 
-    <!-- Tab Panel: Core Telemetry -->
-    <div id="tab-telemetry" class="tab-panel active">
       <div class="layout">
         <div class="left">
           <div class="card card-tech">
@@ -334,28 +334,53 @@
         <!-- Nova Commander Cockpit -->
         <div id="team-control-room" class="col-span-2"></div>
 
-        <div class="card card-tech" data-nova-id="configured-agents">
+        <div class="card card-tech col-span-2 active-work-card" data-nova-id="active-work">
           <div class="section-head">
-            <h2>Configured Agents</h2>
-            <span>Configured agents inside this OpenClaw workspace</span>
+            <h2>Active Work Index</h2>
+            <span>Current focus · Project dossiers · Next safe step</span>
           </div>
-          <div id="configured-agents" class="agents-list" style="margin-top: 15px;"></div>
+          <div id="active-work" class="active-work-index"></div>
         </div>
 
-        <div class="card card-tech" data-nova-id="active-sessions">
+        <div class="card card-tech col-span-2 skill-registry-card" data-nova-id="skill-registry">
           <div class="section-head">
-            <h2>Active Sessions</h2>
-            <span>Direct and cron agent conversation threads</span>
+            <h2>Nova Skill Registry</h2>
+            <span>Routing map · Eval flywheel · Skill governance</span>
           </div>
-          <div id="active-sessions" class="sessions-list" style="margin-top: 15px;"></div>
+          <div id="skill-registry" class="skill-registry"></div>
         </div>
 
-        <div class="card card-tech col-span-2" data-nova-id="active-tasks">
+        <div class="card card-tech col-span-2 agents-submenu-card" data-nova-id="agents-secondary-menu">
           <div class="section-head">
-            <h2>Running Background Tasks</h2>
-            <span>Live execution pressure and recent background task runs</span>
+            <h2>Agent System Details</h2>
+            <span>Configured agents · Sessions · Background tasks</span>
           </div>
-          <div id="active-tasks" class="tasks-list" style="margin-top: 15px;"></div>
+
+          <div class="agents-submenu">
+            <details class="agents-submenu-item" data-nova-id="configured-agents">
+              <summary>
+                <span>Configured Agents</span>
+                <small>Workspace agent registry</small>
+              </summary>
+              <div id="configured-agents" class="agents-list agents-submenu-content"></div>
+            </details>
+
+            <details class="agents-submenu-item" data-nova-id="active-sessions">
+              <summary>
+                <span>Active Sessions</span>
+                <small>Direct and cron agent threads</small>
+              </summary>
+              <div id="active-sessions" class="sessions-list agents-submenu-content"></div>
+            </details>
+
+            <details class="agents-submenu-item" data-nova-id="active-tasks">
+              <summary>
+                <span>Running Background Tasks</span>
+                <small>Execution pressure and recent runs</small>
+              </summary>
+              <div id="active-tasks" class="tasks-list agents-submenu-content"></div>
+            </details>
+          </div>
         </div>
       </div>
     </div>
@@ -575,7 +600,7 @@
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
 
-  <script src="app.js?v=1.3.2" defer></script>
+  <script src="app.js?v=1.7" defer></script>
 
   <!-- Interactive Command Center Scripts -->
   <script>

@@ -15,6 +15,11 @@ const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
 const SUPPORT_DIGEST_EXPORT = path.join(WORKSPACE, 'grafana-dashboards', 'export_support_digest_data.py');
 const SUPPORT_DIGEST_JSON = path.join(PUBLIC, 'data', 'support_digest.json');
 const STATUS_SNAPSHOT_JSON = path.join(PUBLIC, 'data', 'status_snapshot.json');
+const ACTIVE_WORK_MD = path.join(WORKSPACE, 'ACTIVE_WORK.md');
+const NOVA_SKILL_REGISTRY_SCRIPT = path.join(WORKSPACE, 'nova-skill-os', 'skill_registry.py');
+const NOVA_SKILL_REGISTRY_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'skill-registry.json');
+const NOVA_EVAL_FLYWHEEL_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'eval-flywheel.json');
+const NOVA_LATEST_EVAL_RESULT_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'latest-eval-result.json');
 const TELEGRAM_BRIDGE_LOG = path.join(WORKSPACE, 'logs', 'telegram-bridge.out.log');
 const N8N_DIR = path.join(WORKSPACE, 'n8n');
 const OPENCLAW_CONFIG_JSON = '/Users/nova/.openclaw/openclaw.json';
@@ -28,12 +33,28 @@ const GROQ_KEY_FILE = '/Users/nova/.openclaw/secrets/cheap-repo-reader/groq-api-
 const REPO_REVIEW_QUEUE_JSON = path.join(WORKSPACE, 'research', 'repo-review-queue', 'queue.json');
 const CHEAP_REPO_REVIEWS_DIR = path.join(WORKSPACE, 'research', 'cheap-repo-reviews');
 const VERIFICATION_DIR = path.join(WORKSPACE, 'outputs', 'verification');
+const MULTIAGENT_RUNTIME_JSON = path.join(WORKSPACE, 'data', 'multiagent-runtime.json');
+const MULTIAGENT_WORKER_PROFILES_JSON = path.join(WORKSPACE, 'data', 'multiagent-worker-profiles.json');
+const MULTIAGENT_TASK_TEMPLATES_JSON = path.join(WORKSPACE, 'data', 'multiagent-task-templates.json');
+const MULTIAGENT_DASHBOARD_REPO_MATRIX_JSON = path.join(WORKSPACE, 'data', 'multiagent-dashboard-repo-matrix.json');
+const MULTIAGENT_WATCH_PLIST = '/Users/nova/Library/LaunchAgents/ai.openclaw.nova-agent-watch.plist';
 const NEXUS_PATTERNS_DOC = path.join(WORKSPACE, 'research', 'agency-agents', 'nova-nexus-patterns-2026-06-01.md');
 const AI_ENGINEERING_ADAPTATION_DOC = path.join(WORKSPACE, 'research', 'ai-engineering-from-scratch', 'nova-adaptation-plan-2026-06-01.md');
-const CODEX_ACCOUNTS = [
-  'openai-codex:watit2004@gmail.com',
-  'openai-codex:natty.jk@gmail.com',
+const CODEX_ACCOUNT_DEFS = [
+  {
+    id: 'openai:watit2004@gmail.com',
+    legacyIds: ['openai-codex:watit2004@gmail.com'],
+    email: 'watit2004@gmail.com',
+    codexHome: '/Users/nova/.openclaw/agents/main/agent/codex-home',
+  },
+  {
+    id: 'openai:natty.jk@gmail.com',
+    legacyIds: ['openai-codex:natty.jk@gmail.com'],
+    email: 'natty.jk@gmail.com',
+    codexHome: '/Users/nova/.openclaw/agents/main/agent/codex-home-natty',
+  },
 ];
+const CODEX_ACCOUNTS = CODEX_ACCOUNT_DEFS.map(account => account.id);
 const CODEX_APP_SERVER_DIST = '/Users/nova/.openclaw/npm/node_modules/@openclaw/codex/dist';
 const CODEX_APP_SERVER_BIN = '/Applications/Codex.app/Contents/Resources/codex';
 const GEMMA_AUTH_PROFILE = 'google:aistudio-gemma';
@@ -450,7 +471,7 @@ const ALERT_ROUTES = [
 function run(cmd, args = [], timeout = 15000, options = {}) {
   return new Promise(resolve => {
     execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024, env: { ...process.env, ...(options.env || {}) } }, (error, stdout, stderr) => {
-      resolve({ ok: !error, code: error?.code ?? 0, output: `${stdout || ''}${stderr ? '\n' + stderr : ''}`.trim() });
+      resolve({ ok: !error, code: error?.code ?? 0, stdout: stdout || '', stderr: stderr || '', output: `${stdout || ''}${stderr ? '\n' + stderr : ''}`.trim() });
     });
   });
 }
@@ -493,6 +514,92 @@ async function readJsonFile(file) {
   } catch {
     return null;
   }
+}
+
+function parseJsonOutput(output) {
+  const text = String(output || '').trim();
+  if (!text) throw new Error('empty JSON output');
+  try {
+    return JSON.parse(text);
+  } catch {}
+  const lineStartMatch = text.match(/(?:^|\n)(\s*[\[{])/);
+  const candidates = [
+    lineStartMatch ? lineStartMatch.index + lineStartMatch[0].search(/[\[{]/) : -1,
+    text.lastIndexOf('\n[') >= 0 ? text.lastIndexOf('\n[') + 1 : -1,
+    text.lastIndexOf('\n{') >= 0 ? text.lastIndexOf('\n{') + 1 : -1,
+    text.indexOf('['),
+    text.indexOf('{')
+  ].filter(index => index >= 0).sort((a, b) => a - b);
+  for (const index of candidates) {
+    try {
+      return JSON.parse(text.slice(index));
+    } catch {}
+  }
+  throw new Error('Could not parse JSON output');
+}
+
+function parseActiveWorkMarkdown(content) {
+  const sections = [];
+  let current = null;
+  for (const rawLine of String(content || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const sectionMatch = line.match(/^##\s+(.+)$/);
+    if (sectionMatch) {
+      current = { title: sectionMatch[1], items: [] };
+      sections.push(current);
+      continue;
+    }
+    if (!current || line.startsWith('#')) continue;
+    current.items.push(line.replace(/^-+\s*/, ''));
+  }
+  return sections;
+}
+
+async function collectActiveWork() {
+  const content = await fsp.readFile(ACTIVE_WORK_MD, 'utf8');
+  const stat = await fsp.stat(ACTIVE_WORK_MD);
+  return {
+    generatedAt: new Date().toISOString(),
+    source: ACTIVE_WORK_MD,
+    updatedAt: stat.mtime.toISOString(),
+    sections: parseActiveWorkMarkdown(content),
+    raw: content
+  };
+}
+
+async function switchCodexAccount(accountId, restartGateway = true) {
+  if (!CODEX_ACCOUNTS.includes(accountId)) {
+    throw new Error('Unsupported Codex account: ' + accountId);
+  }
+  const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
+  if (!config) throw new Error('Could not read OpenClaw config');
+  if (!config.auth) config.auth = {};
+  if (!config.auth.order) config.auth.order = {};
+  const fallback = CODEX_ACCOUNTS.filter(account => account !== accountId);
+  config.auth.order['openai-codex'] = [accountId, ...fallback];
+  await fsp.writeFile(OPENCLAW_CONFIG_JSON, JSON.stringify(config, null, 2) + '\n', 'utf8');
+
+  const validate = await run(OPENCLAW, ['config', 'validate'], 20000);
+  if (!validate.ok) throw new Error('Config validation failed: ' + validate.output);
+
+  let restart = { ok: false, skipped: !restartGateway, output: 'Gateway restart skipped' };
+  if (restartGateway) {
+    restart = await run(OPENCLAW, ['gateway', '--force', 'restart'], 45000);
+    if (!restart.ok) {
+      restart = await run(OPENCLAW, ['gateway', 'restart', '--force'], 45000);
+    }
+  }
+  cache.delete('codex-quota');
+  cache.delete('fast-status');
+  return {
+    ok: validate.ok && (!restartGateway || restart.ok),
+    accountId,
+    order: config.auth.order['openai-codex'],
+    validate: validate.output,
+    restart,
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 async function tail(file, lines = 40) {
@@ -966,7 +1073,7 @@ async function collectRepoReviewRuns() {
 async function collectAgents() {
   const result = await run(OPENCLAW, ['agents', 'list', '--json'], 15000);
   if (!result.ok) throw new Error('Failed to run agents list: ' + result.output);
-  const parsed = JSON.parse(result.output);
+  const parsed = parseJsonOutput(result.stdout || result.output);
   if (Array.isArray(parsed)) return parsed;
   return Object.entries(parsed || {})
     .filter(([key, value]) => /^\d+$/.test(key) && value && typeof value === 'object')
@@ -976,13 +1083,13 @@ async function collectAgents() {
 async function collectActiveTasks() {
   const result = await run(OPENCLAW, ['tasks', 'list', '--json'], 15000);
   if (!result.ok) throw new Error('Failed to run tasks list: ' + result.output);
-  return JSON.parse(result.output);
+  return parseJsonOutput(result.stdout || result.output);
 }
 
 async function collectActiveSessions() {
   const result = await run(OPENCLAW, ['status', '--json'], 15000);
   if (!result.ok) throw new Error('Failed to run status --json: ' + result.output);
-  const statusData = JSON.parse(result.output);
+  const statusData = parseJsonOutput(result.stdout || result.output);
   return {
     generatedAt: new Date().toISOString(),
     count: statusData.sessions?.count || 0,
@@ -1056,13 +1163,106 @@ async function readPlaybookSnapshot() {
   };
 }
 
+async function collectMultiagentRuntime() {
+  const [runtime, workerProfiles, taskTemplates, dashboardRepoMatrix] = await Promise.all([
+    readJsonFile(MULTIAGENT_RUNTIME_JSON).catch(() => null),
+    readJsonFile(MULTIAGENT_WORKER_PROFILES_JSON).catch(() => ({ profiles: [] })),
+    readJsonFile(MULTIAGENT_TASK_TEMPLATES_JSON).catch(() => ({ templates: [] })),
+    readJsonFile(MULTIAGENT_DASHBOARD_REPO_MATRIX_JSON).catch(() => ({ repos: [] })),
+  ]);
+  if (!runtime) {
+    return {
+      available: false,
+      mode: 'not configured',
+      queue: [],
+      handoffs: [],
+      evidenceLedger: [],
+      summary: {
+        queued: 0,
+        running: 0,
+        verification: 0,
+        blocked: 0,
+        needsApproval: 0,
+        done: 0,
+      },
+      workerProfiles: workerProfiles.profiles || [],
+      taskTemplates: taskTemplates.templates || [],
+      dashboardRepoMatrix,
+    };
+  }
+
+  const queue = Array.isArray(runtime.queue) ? runtime.queue : [];
+  const count = status => queue.filter(task => task.status === status).length;
+  const needsApproval = queue.filter(task => task.status === 'needs_approval' || task.approvalRequired).length;
+  return {
+    ...runtime,
+    workerProfiles: workerProfiles.profiles || [],
+    taskTemplates: taskTemplates.templates || [],
+    dashboardRepoMatrix,
+    available: true,
+    summary: {
+      total: queue.length,
+      queued: count('queued'),
+      assigned: count('assigned'),
+      running: count('running'),
+      handoff: count('handoff'),
+      verification: count('verification'),
+      qualityReview: count('quality_review'),
+      blocked: count('blocked'),
+      needsApproval,
+      done: count('done'),
+      handoffs: Array.isArray(runtime.handoffs) ? runtime.handoffs.length : 0,
+      evidence: Array.isArray(runtime.evidenceLedger) ? runtime.evidenceLedger.length : 0,
+      supervisorRuns: Array.isArray(runtime.supervisorRuns) ? runtime.supervisorRuns.length : 0,
+      lastSupervisorRun: Array.isArray(runtime.supervisorRuns) ? runtime.supervisorRuns[0] || null : null,
+      workerProfiles: Array.isArray(workerProfiles.profiles) ? workerProfiles.profiles.length : 0,
+      taskTemplates: Array.isArray(taskTemplates.templates) ? taskTemplates.templates.length : 0,
+      workerSessions: Array.isArray(runtime.workerSessions) ? runtime.workerSessions.length : 0,
+      lastWorkerSession: Array.isArray(runtime.workerSessions) ? runtime.workerSessions[0] || null : null,
+      workerExecutions: Array.isArray(runtime.workerExecutions) ? runtime.workerExecutions.length : 0,
+      lastWorkerExecution: Array.isArray(runtime.workerExecutions) ? runtime.workerExecutions[0] || null : null,
+      approvals: Array.isArray(runtime.approvals) ? runtime.approvals.length : 0,
+      qaCloseouts: Array.isArray(runtime.qaCloseouts) ? runtime.qaCloseouts.length : 0,
+      lastQaCloseout: Array.isArray(runtime.qaCloseouts) ? runtime.qaCloseouts[0] || null : null,
+      qualityReviews: Array.isArray(runtime.qualityReviews) ? runtime.qualityReviews.length : 0,
+      lastQualityReview: Array.isArray(runtime.qualityReviews) ? runtime.qualityReviews[0] || null : null,
+      doctorRuns: Array.isArray(runtime.doctorRuns) ? runtime.doctorRuns.length : 0,
+      lastDoctorRun: Array.isArray(runtime.doctorRuns) ? runtime.doctorRuns[0] || null : null,
+      autopilotRuns: Array.isArray(runtime.autopilotRuns) ? runtime.autopilotRuns.length : 0,
+      lastAutopilotRun: Array.isArray(runtime.autopilotRuns) ? runtime.autopilotRuns[0] || null : null,
+      reviews: Array.isArray(runtime.reviews) ? runtime.reviews.length : 0,
+      lastReview: Array.isArray(runtime.reviews) ? runtime.reviews[0] || null : null,
+      scheduledWatches: Array.isArray(runtime.scheduledWatches) ? runtime.scheduledWatches.length : 0,
+      lastScheduledWatch: Array.isArray(runtime.scheduledWatches) ? runtime.scheduledWatches[0] || null : null,
+      auditExports: Array.isArray(runtime.auditExports) ? runtime.auditExports.length : 0,
+      lastAuditExport: Array.isArray(runtime.auditExports) ? runtime.auditExports[0] || null : null,
+      sessionStatusRuns: Array.isArray(runtime.sessionStatusRuns) ? runtime.sessionStatusRuns.length : 0,
+      lastSessionStatusRun: Array.isArray(runtime.sessionStatusRuns) ? runtime.sessionStatusRuns[0] || null : null,
+      workspaceEvidenceReports: Array.isArray(runtime.workspaceEvidenceReports) ? runtime.workspaceEvidenceReports.length : 0,
+      lastWorkspaceEvidenceReport: Array.isArray(runtime.workspaceEvidenceReports) ? runtime.workspaceEvidenceReports[0] || null : null,
+      autoCreatedTasks: queue.filter(task => task.autoCreated).length,
+      tokenAttributionRuns: Array.isArray(runtime.tokenAttributionRuns) ? runtime.tokenAttributionRuns.length : 0,
+      lastTokenAttributionRun: Array.isArray(runtime.tokenAttributionRuns) ? runtime.tokenAttributionRuns[0] || null : null,
+      trustScoreRuns: Array.isArray(runtime.trustScoreRuns) ? runtime.trustScoreRuns.length : 0,
+      lastTrustScoreRun: Array.isArray(runtime.trustScoreRuns) ? runtime.trustScoreRuns[0] || null : null,
+      uiDesignAuditRuns: Array.isArray(runtime.uiDesignAuditRuns) ? runtime.uiDesignAuditRuns.length : 0,
+      lastUiDesignAuditRun: Array.isArray(runtime.uiDesignAuditRuns) ? runtime.uiDesignAuditRuns[0] || null : null,
+      watchLaunchAgent: {
+        installed: fs.existsSync(MULTIAGENT_WATCH_PLIST),
+        path: MULTIAGENT_WATCH_PLIST,
+      },
+    },
+  };
+}
+
 async function collectTeamControl() {
-  const [agentsRaw, sessionsRaw, tasksRaw, reports, playbooks] = await Promise.all([
+  const [agentsRaw, sessionsRaw, tasksRaw, reports, playbooks, runtime] = await Promise.all([
     cached('agents', TTL.agents, collectAgents).catch(error => ({ error: error.message })),
     cached('active-sessions', TTL.activeSessions, collectActiveSessions).catch(error => ({ error: error.message, count: 0, recent: [] })),
     cached('active-tasks', TTL.activeTasks, collectActiveTasks).catch(error => ({ error: error.message, count: 0, tasks: [] })),
     collectVerificationReports(),
     readPlaybookSnapshot(),
+    collectMultiagentRuntime(),
   ]);
 
   const agents = Array.isArray(agentsRaw) ? agentsRaw : [];
@@ -1153,10 +1353,15 @@ async function collectTeamControl() {
       recentReports: reports.length,
       passedReports,
       failedReports,
+      runtimeTasks: runtime.summary?.total || 0,
+      runtimeQueued: runtime.summary?.queued || 0,
+      runtimeRunning: runtime.summary?.running || 0,
+      runtimeNeedsApproval: runtime.summary?.needsApproval || 0,
     },
-    health: failedTasks.length || failedReports ? 'warning' : runningTasks.length ? 'healthy' : 'healthy',
+    health: failedTasks.length || failedReports || runtime.summary?.blocked || runtime.summary?.needsApproval ? 'warning' : runningTasks.length || runtime.summary?.running ? 'healthy' : 'healthy',
     roles,
     roster,
+    runtime,
     live: {
       sessions: sessions.slice(0, 6),
       runningTasks: runningTasks.slice(0, 6),
@@ -1169,12 +1374,13 @@ async function collectTeamControl() {
       'Feature/app build -> Senior Full Stack Developer -> QA / Verification -> dashboard/report closeout',
       'Incident/support issue -> Support / RCA -> evidence timeline -> prevention actions',
       'Code/dashboard change -> Dashboard Builder/DevOps -> nova-verify-task closeout',
+      'Runtime task -> Orchestrator -> Specialist -> Handoff Contract -> Evidence Ledger -> Verification',
       'Repeated QA failure 3 times -> escalation report for Nick approval',
     ],
     nextActions: [
-      'Add write-side task intake form with explicit human approval before external actions',
-      'Add allowlisted specialist roster instead of installing large third-party agent packs wholesale',
-      'Attach verification report links to every completed routed task',
+      'Add bin/nova-agent-task for task create/update/close commands',
+      'Add report-only supervisor loop for stale task monitoring and approval requests',
+      'Attach verification report links to every completed runtime task',
     ],
     errors: {
       agents: agentsRaw.error || null,
@@ -1309,9 +1515,12 @@ async function collectGrafanaMcp() {
 }
 
 function emptyCodexUsage(accountId, configured = false) {
+  const definition = CODEX_ACCOUNT_DEFS.find(account => account.id === accountId || account.legacyIds.includes(accountId));
   return {
     accountId,
-    email: accountId.replace(/^openai-codex:/, ''),
+    aliases: definition?.legacyIds || [],
+    email: definition?.email || accountId.replace(/^openai(?:-codex)?:/, ''),
+    codexHome: definition?.codexHome || '',
     configured,
     status: configured ? 'healthy' : 'warning',
     statusLabel: configured ? 'Configured' : 'Missing profile',
@@ -1642,23 +1851,43 @@ async function loadCodexRequestModule() {
   return codexRequestModulePromise;
 }
 
-async function readCodexRealtimeLimit(config, accountId) {
+function codexAppServerStartOptions(codexHome = '') {
+  const startOptions = {
+    transport: 'stdio',
+    command: fs.existsSync(CODEX_APP_SERVER_BIN) ? CODEX_APP_SERVER_BIN : 'codex',
+    commandSource: 'managed',
+    args: ['app-server', '--listen', 'stdio://'],
+    headers: {},
+  };
+  if (codexHome) startOptions.env = { CODEX_HOME: codexHome };
+  return startOptions;
+}
+
+async function readCodexActiveAccount(config, codexHome = '') {
   const { methods, requestCodexAppServerJson } = await loadCodexRequestModule();
-  return normalizeCodexRealtimeLimit(await requestCodexAppServerJson({
+  const value = await requestCodexAppServerJson({
+    method: methods.account,
+    requestParams: { refreshToken: false },
+    timeoutMs: 20000,
+    startOptions: codexAppServerStartOptions(codexHome),
+    config,
+    isolated: true,
+  });
+  return value?.account || null;
+}
+
+async function readCodexRealtimeLimit(config, accountId, codexHome = '') {
+  const { methods, requestCodexAppServerJson } = await loadCodexRequestModule();
+  const request = {
     method: methods.rateLimits,
     requestParams: undefined,
     timeoutMs: 20000,
-    startOptions: {
-      transport: 'stdio',
-      command: fs.existsSync(CODEX_APP_SERVER_BIN) ? CODEX_APP_SERVER_BIN : 'codex',
-      commandSource: 'managed',
-      args: ['app-server', '--listen', 'stdio://'],
-      headers: {},
-    },
+    startOptions: codexAppServerStartOptions(codexHome),
     config,
-    authProfileId: accountId,
     isolated: true,
-  }));
+  };
+  if (accountId) request.authProfileId = accountId;
+  return normalizeCodexRealtimeLimit(await requestCodexAppServerJson(request));
 }
 
 function groqEmptyUsage(configured = false) {
@@ -1950,8 +2179,15 @@ async function collectCodexQuota() {
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
-  const profiles = config?.auth?.profiles || {};
-  const itemsByAccount = new Map(CODEX_ACCOUNTS.map(account => [account, emptyCodexUsage(account, Boolean(profiles[account]))]));
+  const authProfiles = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  const profiles = { ...(config?.auth?.profiles || {}), ...(authProfiles?.profiles || {}) };
+  const configuredAccountIds = new Set(Object.keys(profiles));
+  const accountDefs = CODEX_ACCOUNT_DEFS.map(account => ({
+    ...account,
+    configured: configuredAccountIds.has(account.id) || account.legacyIds.some(id => configuredAccountIds.has(id)),
+  }));
+  const itemsByAccount = new Map(accountDefs.map(account => [account.id, emptyCodexUsage(account.id, account.configured)]));
+  const accountAliases = new Map(accountDefs.flatMap(account => [[account.id, account.id], ...account.legacyIds.map(id => [id, account.id])]));
 
   let files = [];
   try {
@@ -1969,7 +2205,7 @@ async function collectCodexQuota() {
   for (const sidecar of sidecars) {
     const sidecarPath = path.join(OPENCLAW_SESSIONS_DIR, sidecar);
     const meta = await readJsonFile(sidecarPath);
-    const accountId = meta?.authProfileId;
+    const accountId = accountAliases.get(meta?.authProfileId) || meta?.authProfileId;
     if (!itemsByAccount.has(accountId)) continue;
 
     const item = itemsByAccount.get(accountId);
@@ -2015,10 +2251,26 @@ async function collectCodexQuota() {
   }
 
   const realtimeErrors = [];
+  const activeCodexAccounts = {};
   await Promise.all([...itemsByAccount.values()].map(async item => {
     if (!item.configured) return;
     try {
-      const realtimeLimit = await readCodexRealtimeLimit(config, item.accountId);
+      const activeCodexAccount = await readCodexActiveAccount(config, item.codexHome);
+      activeCodexAccounts[item.email] = activeCodexAccount;
+      if (activeCodexAccount?.email && activeCodexAccount.email !== item.email) {
+        item.status = 'warning';
+        item.statusLabel = 'Wrong Codex login';
+        item.limitLabel = `Codex home logged in as ${activeCodexAccount.email}`;
+        item.realtimeLimit = {
+          generatedAt: new Date().toISOString(),
+          primary: null,
+          secondary: null,
+          error: `This Codex home is logged in as ${activeCodexAccount.email}.`,
+        };
+        return;
+      }
+      const profileIsCodex = item.accountId.startsWith('openai-codex:');
+      const realtimeLimit = await readCodexRealtimeLimit(config, profileIsCodex ? item.accountId : null, item.codexHome);
       if (!realtimeLimit) return;
       item.realtimeLimit = realtimeLimit;
       item.limitKnown = true;
@@ -2034,13 +2286,28 @@ async function collectCodexQuota() {
         item.statusLabel = realtimeLimit.planType ? `Realtime · ${realtimeLimit.planType}` : 'Realtime';
       }
     } catch (e) {
-      realtimeErrors.push(`${item.email}: ${e?.message || String(e)}`);
+      const message = e?.message || String(e);
+      if (/authentication required|requiresOpenaiAuth|must be OpenAI Codex auth|auth profile .* was not found/i.test(message)) {
+        item.status = 'warning';
+        item.statusLabel = 'Codex auth required';
+        item.limitLabel = 'Codex app-server auth required';
+        item.realtimeLimit = {
+          generatedAt: new Date().toISOString(),
+          primary: null,
+          secondary: null,
+          error: 'Codex app-server is not authenticated for quota reads.',
+        };
+      }
+      realtimeErrors.push(`${item.email}: ${message}`);
     }
   }));
 
   return {
     generatedAt: new Date().toISOString(),
     source: 'codex-app-server-rate-limits + local-session-logs',
+    activeAccount: config?.auth?.order?.openai?.[0] || config?.auth?.order?.['openai-codex']?.[0] || '',
+    activeCodexAccounts,
+    order: config?.auth?.order?.openai || config?.auth?.order?.['openai-codex'] || [],
     note: realtimeErrors.length
       ? 'Realtime Codex quota partially unavailable: ' + realtimeErrors.join(' | ')
       : 'Realtime Codex quota is read from Codex app-server rate-limit snapshots. Token/session metrics are still from saved local session logs.',
@@ -2121,6 +2388,10 @@ async function collect() {
       'Read-only dashboard live MVP',
       'Harness results visible in dashboard GUI',
       'Incident Radar + workflow configuration health + freshness labels live in v1.3',
+      'Goal Orchestrator agent cockpit live in v1.5',
+      'Visual Agent Office workspace live in v1.5.1',
+      'DAG Orchestration View from Synapse reference review live in v1.6',
+      'Vibe Graph Draft from MASFactory reference review live in v1.7',
       'Connect n8n execution/error API history (currently artifact/runtime evidence only)',
       'Add incident timeline and weekly ops report export',
       'Add authenticated admin actions only with explicit confirmation + audit log'
@@ -2202,6 +2473,17 @@ const server = http.createServer(async (req, res) => {
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
     return;
   }
+  if (url.pathname === '/api/codex-account-switch') {
+    try {
+      const accountId = url.searchParams.get('account');
+      const restartGateway = url.searchParams.get('restart') !== '0';
+      const result = await switchCodexAccount(accountId, restartGateway);
+      send(res, result.ok ? 200 : 207, 'application/json', JSON.stringify(result));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ ok: false, error: e?.message || String(e) }));
+    }
+    return;
+  }
   if (url.pathname === '/api/gemma-quota') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('gemma-quota', TTL.gemmaQuota, collectGemmaQuota, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
@@ -2249,6 +2531,34 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  if (url.pathname === '/api/active-work') {
+    try {
+      send(res, 200, 'application/json', JSON.stringify(await collectActiveWork()));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/skill-registry') {
+    try {
+      if (url.searchParams.get('refresh') === '1') {
+        await run('python3', [NOVA_SKILL_REGISTRY_SCRIPT], 30000);
+      }
+      const registry = await readJsonFile(NOVA_SKILL_REGISTRY_JSON);
+      const evalFlywheel = await readJsonFile(NOVA_EVAL_FLYWHEEL_JSON);
+      const latestEvalResult = await readJsonFile(NOVA_LATEST_EVAL_RESULT_JSON);
+      send(res, 200, 'application/json', JSON.stringify({
+        ok: Boolean(registry),
+        generatedAt: registry?.generatedAt || null,
+        registry,
+        evalFlywheel,
+        latestEvalResult,
+      }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
   if (url.pathname === '/api/trigger-summary') {
     try {
       const scriptPath = path.join(WORKSPACE, 'bin', 'nova-summarize-turn');
@@ -2270,6 +2580,135 @@ const server = http.createServer(async (req, res) => {
         'Tactical manual verification from Commander Cockpit',
       ], 45000);
       send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, taskId, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-supervisor') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-supervisor');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-worker') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-run-worker');
+      const taskId = url.searchParams.get('taskId');
+      const args = [scriptPath, '--apply', '--json'];
+      if (taskId) args.push('--task-id', taskId);
+      const result = await run('python3', args, 45000);
+      cache.delete('team-control');
+      let session = null;
+      try { session = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, session, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/approve-task') {
+    try {
+      const taskId = url.searchParams.get('taskId');
+      if (!taskId) throw new Error('taskId is required');
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-approve');
+      const result = await run('python3', [scriptPath, taskId, '--approved-by', 'Nick', '--reason', 'Approved from Commander / Telegram request to complete supervised multi-agent runtime.'], 45000);
+      cache.delete('team-control');
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-low-risk-worker-execution') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-low-risk-execute');
+      const args = [scriptPath, '--apply', '--json'];
+      const taskId = url.searchParams.get('taskId');
+      const role = url.searchParams.get('role');
+      if (taskId) args.push('--task-id', taskId);
+      if (role) args.push('--role', role);
+      const result = await run('python3', args, 120000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-qa-closeout') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-qa-closeout');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-quality-review') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-quality-review');
+      const args = [scriptPath, '--apply', '--json'];
+      const taskId = url.searchParams.get('taskId');
+      if (taskId) args.push('--task-id', taskId);
+      if (url.searchParams.get('backfill') === '1') args.push('--backfill-done');
+      const result = await run('python3', args, 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-session-status') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-session-status');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-doctor') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-doctor');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-autopilot') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-autopilot');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 120000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
     } catch (e) {
       send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
     }
@@ -2316,6 +2755,159 @@ const server = http.createServer(async (req, res) => {
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
+  if (url.pathname === '/api/multiagent-runtime') {
+    try { send(res, 200, 'application/json', JSON.stringify(await collectMultiagentRuntime())); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (url.pathname === '/api/multiagent-trace') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-trace');
+      const taskId = url.searchParams.get('taskId');
+      const args = [scriptPath, '--json', '--write'];
+      if (taskId) args.push('--task-id', taskId);
+      const result = await run('python3', args, 45000);
+      let trace = null;
+      try { trace = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, trace, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/task-templates') {
+    try { send(res, 200, 'application/json', JSON.stringify(await readJsonFile(MULTIAGENT_TASK_TEMPLATES_JSON) || { templates: [] })); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/create-template-task') {
+    try {
+      const templateId = url.searchParams.get('templateId');
+      if (!templateId) throw new Error('templateId is required');
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-template');
+      const args = [scriptPath, 'create', templateId, '--json'];
+      for (const [key, value] of url.searchParams.entries()) {
+        if (key === 'templateId') continue;
+        if (['title', 'objective', 'priority', 'risk', 'role'].includes(key)) args.push(`--${key}`, value);
+        else args.push('--input', `${key}=${value}`);
+      }
+      const result = await run('python3', args, 45000);
+      cache.delete('team-control');
+      let created = null;
+      try { created = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, created, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-review') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-review');
+      const taskId = url.searchParams.get('taskId');
+      const args = [scriptPath, '--apply', '--json'];
+      if (taskId) args.push('--task-id', taskId, '--all');
+      const result = await run('python3', args, 45000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-watch') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-watch');
+      const args = [scriptPath, '--apply', '--json'];
+      if (url.searchParams.get('autopilot') === '1') args.push('--autopilot-on-watch');
+      if (url.searchParams.get('autoTasks') !== '0') args.push('--auto-create-low-risk-tasks');
+      const result = await run('python3', args, 90000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-workspace-evidence') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-workspace-evidence');
+      const args = [scriptPath, '--apply', '--json'];
+      const taskId = url.searchParams.get('taskId');
+      const workspacePath = url.searchParams.get('workspacePath');
+      const previewUrl = url.searchParams.get('previewUrl');
+      if (taskId) args.push('--task-id', taskId);
+      if (workspacePath) args.push('--workspace-path', workspacePath);
+      if (previewUrl) args.push('--preview-url', previewUrl);
+      if (url.searchParams.get('all') === '1') args.push('--all');
+      const result = await run('python3', args, 90000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-token-attribution') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-token-attribution');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 90000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-trust-score') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-trust-score');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 90000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/run-ui-design-audit') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-ui-design-audit');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 90000);
+      cache.delete('team-control');
+      let report = null;
+      try { report = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, report, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+  if (url.pathname === '/api/multiagent-audit-export') {
+    try {
+      const scriptPath = path.join(WORKSPACE, 'bin', 'nova-agent-audit-export');
+      const result = await run('python3', [scriptPath, '--apply', '--json'], 90000);
+      cache.delete('team-control');
+      let manifest = null;
+      try { manifest = JSON.parse(result.output); } catch {}
+      send(res, 200, 'application/json', JSON.stringify({ ok: result.ok, manifest, output: result.output }));
+    } catch (e) {
+      send(res, 500, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   if (url.pathname === '/api/active-tasks') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('active-tasks', TTL.activeTasks, collectActiveTasks, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }

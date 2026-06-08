@@ -1,11 +1,12 @@
 {
   "name": "nova-ops-dashboard",
-  "version": "1.3.0",
+  "version": "1.7.0",
   "private": true,
   "description": "Nova full OpenClaw Ops Dashboard",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test:qa": "node qa/nova-ops-dashboard-regression.js"
   },
   "dependencies": {}
 }

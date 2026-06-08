@@ -356,9 +356,9 @@ function formatReset(value) {
   return 'Resets ' + new Date(value).toLocaleString();
 }
 
-function renderQuotaWindow(title, window) {
+function renderQuotaWindow(title, window, fallbackMessage = 'Realtime usage not returned', fallbackLabel = 'Unavailable') {
   if (!window || window.usedPercent == null) {
-    return '<div class="quota-window unknown"><div><span>' + esc(title) + '</span><strong>Unavailable</strong></div><p>Realtime usage not returned</p></div>';
+    return '<div class="quota-window unknown"><div><span>' + esc(title) + '</span><strong>' + esc(fallbackLabel) + '</strong></div><p>' + esc(fallbackMessage) + '</p></div>';
   }
   const used = Math.round(Number(window.usedPercent || 0));
   const remaining = Math.max(0, 100 - used);
@@ -378,12 +378,13 @@ function renderCodexQuota(data) {
     const cost7d = '$' + Number(item.usage7d?.cost || 0).toFixed(3);
     const realtime = item.realtimeLimit || {};
     const realtimeAt = realtime.generatedAt ? new Date(realtime.generatedAt).toLocaleTimeString() : 'Unavailable';
+    const realtimeFallback = realtime.error || 'Realtime usage not returned';
     return '<article class="quota-item">'
       + '<div class="quota-head"><div><strong>' + esc(item.email) + '</strong><span>' + esc(item.accountId) + '</span></div>' + statusPill + '</div>'
       + '<div class="quota-limit"><span>Realtime quota usage limit</span><strong>' + esc(item.limitLabel || 'Unavailable') + '</strong><em>Updated ' + esc(realtimeAt) + '</em></div>'
       + '<div class="quota-windows">'
-      + renderQuotaWindow('5 hour usage limit', realtime.primary)
-      + renderQuotaWindow('Weekly usage limit', realtime.secondary)
+      + renderQuotaWindow('5 hour usage limit', realtime.primary, realtimeFallback, realtime.error ? 'Auth required' : 'Unavailable')
+      + renderQuotaWindow('Weekly usage limit', realtime.secondary, realtimeFallback, realtime.error ? 'Auth required' : 'Unavailable')
       + '</div>'
       + '<div class="quota-grid">'
       + '<div><span>24h tokens</span><strong>' + esc(compactNumber(item.usage24h?.totalTokens)) + '</strong></div>'
@@ -573,6 +574,75 @@ function renderAgents(data) {
   }).join('') || '<p class="muted">No agents configured.</p>');
 }
 
+function renderActiveWork(data = {}) {
+  const sections = data.sections || [];
+  const wanted = new Set(['Current Focus', 'Stable / Monitoring', 'Paused / Not Now']);
+  const visibleSections = sections.filter(section => wanted.has(section.title));
+  const html = visibleSections.map(section => {
+    const tone = section.title.includes('Paused') ? 'paused' : section.title.includes('Monitoring') ? 'monitoring' : 'focus';
+    const items = (section.items || []).map(item => {
+      const dossier = item.match(/Dossier:\s+`?([^`]+)`?/i);
+      const next = item.toLowerCase().includes('next best step');
+      const status = item.toLowerCase().includes('status:');
+      const klass = next ? 'next' : status ? 'status' : '';
+      const text = esc(item).replace(/`([^`]+)`/g, '<code>$1</code>');
+      return `<li class="${klass}">${text}${dossier ? ` <span class="active-work-dossier">${esc(dossier[1])}</span>` : ''}</li>`;
+    }).join('');
+    return `<article class="active-work-section ${tone}">
+      <div class="active-work-section-head">
+        <strong>${esc(section.title)}</strong>
+        <span>${esc((section.items || []).length)} signals</span>
+      </div>
+      <ul>${items}</ul>
+    </article>`;
+  }).join('');
+  const updated = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : 'unknown';
+  setHtml('active-work', `<div class="active-work-meta"><span>Source: <code>ACTIVE_WORK.md</code></span><span>Updated: ${esc(updated)}</span></div>${html || '<p class="muted">No active work index found.</p>'}`);
+}
+
+function renderSkillRegistry(data = {}) {
+  const registry = data.registry || {};
+  const evalFlywheel = data.evalFlywheel || {};
+  const latestEval = data.latestEvalResult || {};
+  const summary = registry.summary || {};
+  const evalSummary = latestEval.summary || {};
+  const categories = registry.categories || {};
+  const lanes = evalFlywheel.lanes || [];
+  const risk = summary.risk || {};
+  const categoryCards = Object.entries(categories).slice(0, 8).map(([category, skills]) => `
+    <article class="skill-registry-category">
+      <strong>${esc(category)}</strong>
+      <span>${esc((skills || []).length)} skills</span>
+    </article>
+  `).join('');
+  const laneHtml = lanes.map(lane => `
+    <article class="skill-eval-lane">
+      <strong>${esc(lane.id)}</strong>
+      <p>${esc(lane.goal)}</p>
+      <span>${esc((lane.metrics || []).join(' · '))}</span>
+    </article>
+  `).join('');
+  const updated = registry.generatedAt ? new Date(registry.generatedAt).toLocaleString() : 'unknown';
+  setHtml('skill-registry', `
+    <div class="skill-registry-meta">
+      <div><span>Total skills</span><strong>${esc(summary.skillCount || 0)}</strong></div>
+      <div><span>Categories</span><strong>${esc(summary.categoryCount || 0)}</strong></div>
+      <div><span>High risk</span><strong>${esc(risk.high || 0)}</strong></div>
+      <div><span>Eval lanes</span><strong>${esc(lanes.length)}</strong></div>
+    </div>
+    <div class="skill-eval-result">
+      <div>
+        <span>Latest skill-routing eval</span>
+        <strong>${esc(evalSummary.total || 0)} cases · ${esc(Math.round((evalSummary.categoryAccuracy || 0) * 100))}% category · ${esc(Math.round((evalSummary.riskAccuracy || 0) * 100))}% risk</strong>
+      </div>
+      <span>${esc(latestEval.generatedAt ? new Date(latestEval.generatedAt).toLocaleString() : 'no run yet')}</span>
+    </div>
+    <div class="active-work-meta"><span>Source: <code>nova-skill-os/out</code></span><span>Updated: ${esc(updated)}</span></div>
+    <div class="skill-registry-grid">${categoryCards || '<p class="muted">No categories generated.</p>'}</div>
+    <div class="skill-eval-grid">${laneHtml || '<p class="muted">No eval lanes generated.</p>'}</div>
+  `);
+}
+
 function renderTeamControl(data) {
   const summary = data.summary || {};
   const healthClass = data.health === 'critical' ? 'critical' : data.health === 'warning' ? 'warning' : 'healthy';
@@ -582,6 +652,8 @@ function renderTeamControl(data) {
   const reports = data.reports || [];
   const roles = data.roles || [];
   const roster = data.roster || [];
+  const activeSubTab = window.dashboardState.activeSubTab || 'orchestrator';
+
   const metricHtml = [
     ['Roles', summary.roles || 0],
     ['Agents', summary.registeredAgents || 0],
@@ -605,19 +677,27 @@ function renderTeamControl(data) {
     </article>
   `).join('');
 
-  const reportsHtml = reports.slice(0, 5).map(report => `
-    <article class="jobrun-item">
-      <div class="jobrun-head">
-        <div><strong>${esc(report.taskId)}</strong><span>${esc(report.summary || report.path)}</span></div>
-        <span class="pill ${report.passed ? 'healthy' : 'critical'}">${report.passed ? 'PASSED' : 'NEEDS WORK'}</span>
-      </div>
-      <div class="jobrun-meta">
-        <span>${esc(new Date(report.generatedAt).toLocaleString())}</span>
-        <span>Findings: ${esc(report.findings || 0)}</span>
-        <span>${esc(report.path)}</span>
-      </div>
-    </article>
-  `).join('');
+  const reportsHtml = reports.slice(0, 5).map(report => {
+    const reportPath = report.path || '';
+    const reportFile = reportPath.split('/').pop() || reportPath || 'verification report';
+    const generatedAt = report.generatedAt ? new Date(report.generatedAt).toLocaleString() : 'unknown time';
+    return `
+      <article class="verification-card">
+        <div class="verification-card-head">
+          <div class="verification-card-title">
+            <strong>${esc(report.taskId || reportFile)}</strong>
+            <span>${esc(report.summary || reportFile)}</span>
+          </div>
+          <span class="pill ${report.passed ? 'healthy' : 'critical'}">${report.passed ? 'PASSED' : 'NEEDS WORK'}</span>
+        </div>
+        <div class="verification-card-meta">
+          <span>${esc(generatedAt)}</span>
+          <span>Findings: ${esc(report.findings || 0)}</span>
+        </div>
+        <div class="verification-path" title="${esc(reportPath)}">${esc(reportFile)}</div>
+      </article>
+    `;
+  }).join('');
 
   const runningHtml = runningTasks.map(task => `
     <article class="jobrun-item">
@@ -672,6 +752,261 @@ function renderTeamControl(data) {
     ['Adaptation Plan', playbooks.adaptationPlan],
   ].map(([name, ok]) => `<span class="pill ${ok ? 'healthy' : 'warning'}">${esc(name)}</span>`).join('');
 
+  const rosterHtml = roster.map(agent => `
+    <article class="agent-config-card" style="border: 1px solid rgba(0, 240, 255, 0.1); background: rgba(15, 23, 42, 0.5); padding: 10px; border-radius: 6px;">
+      <div class="agent-card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div class="agent-card-title">
+          <strong style="color: var(--text-primary); font-size: 13px;">${esc(agent.emoji || '🤖')} ${esc(agent.name)}</strong>
+          <span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">ID: ${esc(agent.id)}</span>
+        </div>
+        ${agent.isDefault ? '<span class="pill healthy">Default</span>' : ''}
+      </div>
+      <div class="agent-card-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div><span style="font-size: 10px; color: var(--text-muted); display: block; text-transform: uppercase;">Role</span><strong style="font-size: 11px; color: var(--cyan);">${esc(agent.role)}</strong></div>
+        <div><span style="font-size: 10px; color: var(--text-muted); display: block; text-transform: uppercase;">Model</span><strong style="font-size: 11px; color: var(--text-primary);">${esc(agent.model)}</strong></div>
+      </div>
+    </article>
+  `).join('') || '<p class="muted">No agents configured in roster.</p>';
+
+  const runtime = data.runtime || {};
+  const runtimeSummary = runtime.summary || {};
+  const queue = runtime.queue || [];
+  const handoffs = runtime.handoffs || [];
+  const lifecycleSteps = [
+    ['queued', 'Queue'],
+    ['assigned', 'Assign'],
+    ['handoff', 'Handoff'],
+    ['running', 'Execute'],
+    ['verification', 'Verify'],
+    ['qualityReview', 'Quality'],
+    ['done', 'Done'],
+  ];
+  const pipelineHtml = lifecycleSteps.map(([key, name], index) => {
+    const countValue = runtimeSummary[key] || 0;
+    const isActive = countValue > 0 || (key === 'done' && runtimeSummary.done > 0);
+    return `
+      <article class="agent-pipeline-step ${isActive ? 'active' : ''}">
+        <span>${String(index + 1).padStart(2, '0')}</span>
+        <strong>${esc(name)}</strong>
+        <em>${esc(countValue)}</em>
+      </article>
+    `;
+  }).join('');
+  const dagSteps = lifecycleSteps.map(([key, name], index) => ({
+    id: key,
+    name,
+    count: runtimeSummary[key] || 0,
+    status: (runtimeSummary[key] || 0) > 0 ? 'active' : key === 'done' && runtimeSummary.done > 0 ? 'done' : 'idle',
+    x: 8 + (index * 14.2),
+    y: index % 2 ? 60 : 24,
+  }));
+  const dagNodesHtml = dagSteps.map(step => `
+    <article class="dag-node ${esc(step.status)}" style="--dag-x:${esc(step.x)}%; --dag-y:${esc(step.y)}%;">
+      <strong>${esc(step.name)}</strong>
+      <span>${esc(step.count)}</span>
+    </article>
+  `).join('');
+  const dagEdgesHtml = dagSteps.slice(0, -1).map((step, index) => {
+    const next = dagSteps[index + 1];
+    const left = Math.min(step.x, next.x) + 4;
+    const top = ((step.y + next.y) / 2) + 7;
+    return `<span class="dag-edge ${step.status !== 'idle' || next.status !== 'idle' ? 'active' : ''}" style="--edge-left:${esc(left)}%; --edge-top:${esc(top)}%;"></span>`;
+  }).join('');
+  const vibeDraftNodes = [
+    { type: 'Intent', label: 'Goal Brief', detail: 'Natural-language objective', tone: 'source', x: 8, y: 24 },
+    { type: 'ContextBlock', label: 'Memory / RAG / MCP', detail: 'Local context bundle', tone: 'context', x: 23, y: 60 },
+    { type: 'Switch', label: 'Route', detail: 'Pick agent/tool lane', tone: 'decision', x: 38, y: 24 },
+    { type: 'Agent', label: 'Worker Graph', detail: 'Role + instructions + tools', tone: 'agent', x: 53, y: 60 },
+    { type: 'Loop', label: 'Revise', detail: 'Retry until gate passes', tone: 'loop', x: 68, y: 24 },
+    { type: 'Human', label: 'Approval', detail: 'Telegram checkpoint', tone: 'human', x: 83, y: 60 },
+    { type: 'Trace', label: 'Report', detail: 'Evidence + shared state', tone: 'trace', x: 92, y: 24 },
+  ];
+  const vibeDraftEdgesHtml = vibeDraftNodes.slice(0, -1).map((node, index) => {
+    const next = vibeDraftNodes[index + 1];
+    const left = Math.min(node.x, next.x) + 4;
+    const top = ((node.y + next.y) / 2) + 7;
+    return `<span class="vibe-edge" style="--edge-left:${esc(left)}%; --edge-top:${esc(top)}%;"></span>`;
+  }).join('');
+  const vibeDraftNodesHtml = vibeDraftNodes.map(node => `
+    <article class="vibe-node ${esc(node.tone)}" style="--vibe-x:${esc(node.x)}%; --vibe-y:${esc(node.y)}%;">
+      <span>${esc(node.type)}</span>
+      <strong>${esc(node.label)}</strong>
+      <em>${esc(node.detail)}</em>
+    </article>
+  `).join('');
+  const vibeTemplateHtml = [
+    ['Research', 'Intent -> ContextBlock -> Agent -> Human -> Report'],
+    ['Build', 'Intent -> Switch -> Tool -> Loop -> Quality Gate'],
+    ['Support RCA', 'Incident -> ContextBlock -> Agent -> Human -> Timeline'],
+  ].map(([name, path]) => `<span><strong>${esc(name)}</strong>${esc(path)}</span>`).join('');
+
+  const activeGoals = queue
+    .filter(task => task.status !== 'done')
+    .slice(0, 4);
+  const recentGoals = activeGoals.length ? activeGoals : queue.slice(0, 4);
+  const goalHtml = recentGoals.map(task => `
+    <article class="goal-card">
+      <div class="goal-card-head">
+        <div>
+          <strong>${esc(task.title || task.taskId)}</strong>
+          <span>${esc(task.taskId)} · ${esc(task.assignedRole || 'unassigned')}</span>
+        </div>
+        <span class="pill ${task.status === 'done' ? 'healthy' : task.status === 'blocked' ? 'critical' : 'warning'}">${esc(task.status || 'unknown')}</span>
+      </div>
+      <p>${esc(task.objective || 'No objective captured.')}</p>
+      <div class="goal-card-meta">
+        <span>Risk: ${esc(task.risk || 'local')}</span>
+        <span>Evidence: ${esc((task.evidence || []).length)}</span>
+        <span>QA: ${esc(task.qualityReviewDecision || 'pending')}</span>
+      </div>
+    </article>
+  `).join('');
+
+  const lastTokenRun = runtimeSummary.lastTokenAttributionRun || {};
+  const tokenSummary = lastTokenRun.summary || {};
+  const lastTrustRun = runtimeSummary.lastTrustScoreRun || {};
+  const trustSummary = lastTrustRun.summary || {};
+  const lastUiAuditRun = runtimeSummary.lastUiDesignAuditRun || {};
+  const uiAuditSummary = lastUiAuditRun.summary || {};
+  const tokenTotal = tokenSummary.totalTokens || 0;
+  const tokenPct = Math.max(4, Math.min(100, tokenTotal ? Math.round(tokenTotal / 10000) : 8));
+  const officeAgents = [
+    {
+      id: 'supervisor',
+      name: 'Supervisor',
+      role: 'Goal routing',
+      state: runtimeSummary.queued || runtimeSummary.assigned || runtimeSummary.handoff ? 'executing' : 'idle',
+      desk: 'Command Desk',
+      bubble: runtimeSummary.queued || runtimeSummary.assigned || runtimeSummary.handoff
+        ? `${runtimeSummary.queued || 0} queued / ${runtimeSummary.assigned || 0} assigned`
+        : 'Queue clear',
+      x: 15,
+      y: 30,
+    },
+    {
+      id: 'worker',
+      name: 'Worker',
+      role: 'Execution lane',
+      state: runtimeSummary.running || runningTasks.length ? 'executing' : 'idle',
+      desk: 'Build Bench',
+      bubble: runtimeSummary.running || runningTasks.length
+        ? `${runtimeSummary.running || runningTasks.length} running`
+        : 'Standing by',
+      x: 37,
+      y: 58,
+    },
+    {
+      id: 'reader',
+      name: 'Reader',
+      role: 'Context / file scan',
+      state: runtimeSummary.handoffs ? 'researching' : 'idle',
+      desk: 'Research Pod',
+      bubble: runtimeSummary.handoffs ? `${runtimeSummary.handoffs} handoffs mapped` : 'No handoff drift',
+      x: 58,
+      y: 36,
+    },
+    {
+      id: 'quality',
+      name: 'Quality',
+      role: 'QA / design gate',
+      state: (runtimeSummary.qualityReview || uiAuditSummary.findings) ? 'reviewing' : 'done',
+      desk: 'QA Station',
+      bubble: uiAuditSummary.findings
+        ? `${uiAuditSummary.findings} UI findings`
+        : `UI score ${lastUiAuditRun.score || 0}/100`,
+      x: 78,
+      y: 62,
+    },
+    {
+      id: 'permission',
+      name: 'Approval',
+      role: 'Human checkpoint',
+      state: runtimeSummary.needsApproval ? 'waiting' : 'done',
+      desk: 'Approval Gate',
+      bubble: runtimeSummary.needsApproval ? `${runtimeSummary.needsApproval} waiting` : 'No approvals blocked',
+      x: 48,
+      y: 18,
+    },
+  ];
+  const officeStateLabel = {
+    idle: 'Idle',
+    researching: 'Reading',
+    executing: 'Working',
+    reviewing: 'Review',
+    waiting: 'Waiting',
+    done: 'Done',
+  };
+  const officeAgentsHtml = officeAgents.map(agent => `
+    <article class="office-agent-desk ${esc(agent.state)}" style="--desk-x:${esc(agent.x)}%; --desk-y:${esc(agent.y)}%;">
+      <div class="office-agent-avatar" aria-hidden="true"><span></span></div>
+      <div class="office-agent-card">
+        <strong>${esc(agent.name)}</strong>
+        <span>${esc(agent.role)}</span>
+        <em>${esc(officeStateLabel[agent.state] || agent.state)}</em>
+      </div>
+      <div class="office-agent-bubble">${esc(agent.bubble)}</div>
+      <small>${esc(agent.desk)}</small>
+    </article>
+  `).join('');
+  const activeOfficeAgents = officeAgents.filter(agent => ['researching', 'executing', 'reviewing', 'waiting'].includes(agent.state)).length;
+  const visualOfficeFeed = [
+    runtimeSummary.lastScheduledWatch && `Watch ${runtimeSummary.lastScheduledWatch.watchId || 'latest'} · ${runtimeSummary.lastScheduledWatch.doctorReadiness || 'ready'}`,
+    runtimeSummary.lastQualityReview && `Quality ${runtimeSummary.lastQualityReview.taskId || 'latest'} · ${runtimeSummary.lastQualityReview.decision || 'captured'}`,
+    runtimeSummary.lastUiDesignAuditRun && `Design gate · ${runtimeSummary.lastUiDesignAuditRun.readiness || 'captured'} ${runtimeSummary.lastUiDesignAuditRun.score || 0}/100`,
+    runtimeSummary.lastTrustScoreRun && `Trust score · ${runtimeSummary.lastTrustScoreRun.readiness || 'trusted'} ${runtimeSummary.lastTrustScoreRun.score || 0}/100`,
+  ].filter(Boolean).slice(0, 5).map((line, index) => `
+    <div class="office-feed-line"><span>${String(index + 1).padStart(2, '0')}</span><code>${esc(line)}</code></div>
+  `).join('');
+  const qualityEvents = [
+    runtimeSummary.lastWorkerExecution && {
+      title: 'Worker Execution',
+      value: runtimeSummary.lastWorkerExecution.passed ? 'Passed' : 'Review',
+      meta: runtimeSummary.lastWorkerExecution.report,
+      tone: runtimeSummary.lastWorkerExecution.passed ? 'healthy' : 'warning',
+    },
+    runtimeSummary.lastQaCloseout && {
+      title: 'QA Closeout',
+      value: runtimeSummary.lastQaCloseout.passed ? 'Passed' : 'Review',
+      meta: runtimeSummary.lastQaCloseout.report,
+      tone: runtimeSummary.lastQaCloseout.passed ? 'healthy' : 'warning',
+    },
+    runtimeSummary.lastReview && {
+      title: 'Peer Review',
+      value: runtimeSummary.lastReview.decision || 'Captured',
+      meta: runtimeSummary.lastReview.report,
+      tone: runtimeSummary.lastReview.passed ? 'healthy' : 'warning',
+    },
+    runtimeSummary.lastQualityReview && {
+      title: 'Quality Gate',
+      value: runtimeSummary.lastQualityReview.decision || 'Captured',
+      meta: runtimeSummary.lastQualityReview.report,
+      tone: runtimeSummary.lastQualityReview.passed ? 'healthy' : 'warning',
+    },
+    runtimeSummary.lastDoctorRun && {
+      title: 'Doctor',
+      value: `${runtimeSummary.lastDoctorRun.readiness || 'unknown'} ${runtimeSummary.lastDoctorRun.score ?? ''}`,
+      meta: runtimeSummary.lastDoctorRun.report,
+      tone: runtimeSummary.lastDoctorRun.readiness === 'ready' ? 'healthy' : 'warning',
+    },
+  ].filter(Boolean);
+  const qualityTimelineHtml = qualityEvents.map((event, index) => `
+    <article class="quality-timeline-item ${esc(event.tone)}">
+      <span>${String(index + 1).padStart(2, '0')}</span>
+      <div>
+        <strong>${esc(event.title)} · ${esc(event.value)}</strong>
+        <code title="${esc(event.meta || '')}">${esc((event.meta || '').split('/').pop() || 'report pending')}</code>
+      </div>
+    </article>
+  `).join('');
+
+  const handoffHtml = handoffs.slice(0, 4).map(item => `
+    <article class="handoff-card">
+      <strong>${esc(item.fromRole || 'orchestrator')} -> ${esc(item.toRole || 'worker')}</strong>
+      <span>${esc(item.taskId || item.id)} · ${esc(item.risk || 'local')}</span>
+      <p>${esc(item.objective || item.nextAction || 'No handoff detail captured.')}</p>
+    </article>
+  `).join('');
+
   setHtml('team-control-room', `
     <div class="commander-cockpit" data-health="${esc(healthClass)}">
       <div class="cockpit-command-bar">
@@ -696,113 +1031,365 @@ function renderTeamControl(data) {
         </div>
       </div>
 
-      <div class="cockpit-hero-grid">
-        <section class="cockpit-network-panel">
-          <div class="cockpit-panel-header">
-            <span>Holographic Network Map</span>
-          </div>
-          <div id="team-agent-network" class="team-agent-network" aria-label="Interactive holographic agent network"></div>
-          <div class="cockpit-network-footer">
-            ${networkLegend}
-          </div>
-        </section>
+      <nav class="cockpit-subtabs" role="tablist">
+        <button type="button" class="subtab-btn ${activeSubTab === 'orchestrator' ? 'active' : ''}" data-subtab="orchestrator" role="tab" aria-selected="${activeSubTab === 'orchestrator'}">
+          <span class="subtab-icon">⌬</span> Orchestrator
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'office' ? 'active' : ''}" data-subtab="office" role="tab" aria-selected="${activeSubTab === 'office'}">
+          <span class="subtab-icon">🏢</span> Visual Office
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'workbench' ? 'active' : ''}" data-subtab="workbench" role="tab" aria-selected="${activeSubTab === 'workbench'}">
+          <span class="subtab-icon">🖥️</span> Workbench
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'workers' ? 'active' : ''}" data-subtab="workers" role="tab" aria-selected="${activeSubTab === 'workers'}">
+          <span class="subtab-icon">🤖</span> Workers
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'quality' ? 'active' : ''}" data-subtab="quality" role="tab" aria-selected="${activeSubTab === 'quality'}">
+          <span class="subtab-icon">🛡️</span> Quality
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'security' ? 'active' : ''}" data-subtab="security" role="tab" aria-selected="${activeSubTab === 'security'}">
+          <span class="subtab-icon">🔒</span> Security
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'analytics' ? 'active' : ''}" data-subtab="analytics" role="tab" aria-selected="${activeSubTab === 'analytics'}">
+          <span class="subtab-icon">📈</span> Analytics
+        </button>
+        <button type="button" class="subtab-btn ${activeSubTab === 'routing' ? 'active' : ''}" data-subtab="routing" role="tab" aria-selected="${activeSubTab === 'routing'}">
+          <span class="subtab-icon">🔀</span> Routing
+        </button>
+      </nav>
 
-        <section class="cockpit-console-panel">
-          <div class="cockpit-panel-header">
-            <span>COMMAND CONSOLE</span>
-          </div>
-          <div class="cockpit-terminal-wrapper">
-            <span class="terminal-prompt">&gt;</span>
-            <input type="text" id="cockpit-terminal-input" placeholder="Type command (e.g. status, verify, help)..." autocomplete="off" />
-          </div>
-          <div id="cockpit-terminal-log" class="cockpit-terminal-log">
-            <div class="terminal-line muted">Welcome to Nova Commander. Type 'help' to see available tactical operations.</div>
-          </div>
-          <div class="cockpit-console-footer">
-            <small>${esc(roster.length || roles.length)} nodes linked · ${esc(sessions.length)} live sessions · ${esc(reports.length)} evidence reports</small>
-          </div>
-        </section>
-
-        <section class="cockpit-overview-panel">
-          <div class="cockpit-panel-header">
-            <span>Mission Overview</span>
-          </div>
-          <div class="team-control-summary cockpit-summary">
-            <div>
-              <span>Control Mode</span>
-              <strong>${esc(data.mode || 'read-only')}</strong>
+      <div id="subtab-orchestrator" class="subtab-content ${activeSubTab === 'orchestrator' ? 'active' : ''}">
+        <div class="orchestrator-grid">
+          <section class="orchestrator-panel goal-orchestrator-panel">
+            <div class="cockpit-panel-header"><span>Goal Orchestrator</span></div>
+            <div class="orchestrator-metrics">
+              <div><span>Total Goals</span><strong>${esc(runtimeSummary.total || 0)}</strong></div>
+              <div><span>Active</span><strong>${esc((runtimeSummary.queued || 0) + (runtimeSummary.assigned || 0) + (runtimeSummary.running || 0) + (runtimeSummary.handoff || 0))}</strong></div>
+              <div><span>Needs Approval</span><strong>${esc(runtimeSummary.needsApproval || 0)}</strong></div>
+              <div><span>Done</span><strong>${esc(runtimeSummary.done || 0)}</strong></div>
             </div>
-            <div>
-              <span>Overall</span>
-              <strong class="text-${healthClass === 'healthy' ? 'green' : healthClass === 'critical' ? 'pink' : 'yellow'}">${esc(label(healthClass))}</strong>
+            <div class="goal-list">${goalHtml || '<p class="muted">No goal queue entries captured.</p>'}</div>
+          </section>
+
+          <section class="orchestrator-panel">
+            <div class="cockpit-panel-header"><span>Agent Pipeline</span></div>
+            <div class="agent-pipeline">${pipelineHtml}</div>
+            <div class="handoff-stream">
+              <h3>Latest Handoffs</h3>
+              ${handoffHtml || '<p class="muted">No handoffs captured.</p>'}
             </div>
-            ${metricHtml}
+          </section>
+
+          <section class="orchestrator-panel">
+            <div class="cockpit-panel-header"><span>Token / Context Budget</span></div>
+            <div class="budget-panel">
+              <div class="budget-ring" style="--budget:${esc(tokenPct)}%">
+                <strong>${esc(compactNumber(tokenTotal))}</strong>
+                <span>tokens</span>
+              </div>
+              <div class="budget-list">
+                <div><span>High Sessions</span><strong>${esc(tokenSummary.highTokenSessions || 0)}</strong></div>
+                <div><span>Mapped Runtime</span><strong>${esc(tokenSummary.runtimeMappedSessions || 0)}</strong></div>
+                <div><span>Trust Score</span><strong>${esc(lastTrustRun.score || 0)}/100</strong></div>
+                <div><span>Threat Findings</span><strong>${esc(trustSummary.threatFindings || 0)}</strong></div>
+              </div>
+            </div>
+            <div class="cockpit-action-toolbar compact-toolbar">
+              <button type="button" id="cockpit-btn-token-attribution" class="cockpit-action">Token Attribution</button>
+              <button type="button" id="cockpit-btn-watch" class="cockpit-action">Run Watch</button>
+            </div>
+          </section>
+
+          <section class="orchestrator-panel">
+            <div class="cockpit-panel-header"><span>Quality Gate Timeline</span></div>
+            <div class="quality-timeline">${qualityTimelineHtml || '<p class="muted">No quality events captured.</p>'}</div>
+            <div class="cockpit-action-toolbar compact-toolbar">
+              <button type="button" id="cockpit-btn-supervisor" class="cockpit-action primary">Supervisor</button>
+              <button type="button" id="cockpit-btn-worker" class="cockpit-action">Worker</button>
+              <button type="button" id="cockpit-btn-quality-review" class="cockpit-action">Quality Gate</button>
+            </div>
+          </section>
+        </div>
+        <section class="orchestrator-panel dag-orchestration-panel">
+          <div class="cockpit-panel-header">
+            <span>DAG Orchestration View</span>
+            <small class="dag-reference-note">Synapse review captured locally</small>
           </div>
-          <div class="cockpit-route-card">
-            <span>Primary Route</span>
-            <strong>Feature/App Build -> Senior Full Stack Developer -> QA / Verification</strong>
-            <small>Evidence-backed closeout through dashboard reports.</small>
+          <div class="dag-stage" aria-label="Read-only deterministic orchestration DAG">
+            ${dagEdgesHtml}
+            ${dagNodesHtml}
+          </div>
+          <div class="dag-legend">
+            <span>Source: local runtime artifacts</span>
+            <span>Human gate: ${esc(runtimeSummary.needsApproval || 0)} pending</span>
+            <span>Restart-safe watch: ${runtimeSummary.watchLaunchAgent?.installed ? 'installed' : 'not configured'}</span>
+            <span>License mode: reference only, no AGPL code copied</span>
+          </div>
+        </section>
+        <section class="orchestrator-panel vibe-graph-panel">
+          <div class="cockpit-panel-header">
+            <span>Vibe Graph Draft</span>
+            <small class="dag-reference-note">MASFactory review captured locally</small>
+          </div>
+          <div class="vibe-graph-stage" aria-label="Read-only Vibe Graph Draft">
+            ${vibeDraftEdgesHtml}
+            ${vibeDraftNodesHtml}
+          </div>
+          <div class="vibe-template-strip">${vibeTemplateHtml}</div>
+          <div class="dag-legend">
+            <span>Mode: proposed structure, not execution</span>
+            <span>Nodes: Agent / Tool / Human / Switch / Loop / ContextBlock</span>
+            <span>Reference: Apache-2.0 MASFactory, no install</span>
           </div>
         </section>
       </div>
 
-      <div class="cockpit-analytics-grid">
-        <section class="cockpit-module">
-          <h3>Global Network</h3>
-          <div class="cockpit-mini-map" id="cockpit-mini-map-container">
-            <canvas id="cockpit-minimap-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
-          </div>
-        </section>
-        <section class="cockpit-module">
-          <h3>Active Instances</h3>
-          <div class="cockpit-bars">${uptimeBars || '<p class="muted">No role telemetry.</p>'}</div>
-        </section>
-        <section class="cockpit-module">
-          <h3>Performance Analytics</h3>
-          <svg class="cockpit-line-chart" viewBox="0 0 100 100" role="img" aria-label="Agent performance trend">
-            <defs>
-              <linearGradient id="chart-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#00f0ff"/>
-                <stop offset="50%" stop-color="#8b5cf6"/>
-                <stop offset="100%" stop-color="#d946ef"/>
-              </linearGradient>
-            </defs>
-            <polyline points="${esc(performancePoints || '0,60 100,60')}" fill="none" />
-            ${(performancePoints || '').split(' ').filter(Boolean).map(point => {
-              const [x, y] = point.split(',');
-              return `<circle cx="${esc(x)}" cy="${esc(y)}" r="2.5" />`;
-            }).join('')}
-          </svg>
-        </section>
-        <section class="cockpit-module">
-          <h3>Latest Updates</h3>
-          <div class="cockpit-feed">${activityHtml || '<p class="muted">No recent agent activity.</p>'}</div>
-        </section>
+      <div id="subtab-office" class="subtab-content ${activeSubTab === 'office' ? 'active' : ''}">
+        <div class="visual-office-grid">
+          <section class="visual-office-stage-panel">
+            <div class="cockpit-panel-header">
+              <span>Nova Agent Office</span>
+              <a class="office-open-link" href="http://127.0.0.1:19000" target="_blank" rel="noreferrer">Open AI Town</a>
+            </div>
+            <div class="visual-office-stage" aria-label="Visual multi-agent office workspace">
+              <div class="office-room-floor"></div>
+              <div class="office-room-wall"></div>
+              <div class="office-zone office-zone-command">Command</div>
+              <div class="office-zone office-zone-build">Build</div>
+              <div class="office-zone office-zone-quality">Quality</div>
+              ${officeAgentsHtml}
+            </div>
+          </section>
+
+          <section class="visual-office-status-panel">
+            <div class="cockpit-panel-header"><span>Workspace State</span></div>
+            <div class="office-state-grid">
+              <div><span>Visual Mode</span><strong>Office v0.2</strong></div>
+              <div><span>Live Agents</span><strong>${esc(activeOfficeAgents)}/${esc(officeAgents.length)}</strong></div>
+              <div><span>Goals Done</span><strong>${esc(runtimeSummary.done || 0)}</strong></div>
+              <div><span>Approval Queue</span><strong>${esc(runtimeSummary.needsApproval || 0)}</strong></div>
+              <div><span>UI Gate</span><strong>${esc(lastUiAuditRun.score || 0)}/100</strong></div>
+              <div><span>Trust</span><strong>${esc(lastTrustRun.score || 0)}/100</strong></div>
+            </div>
+            <div class="office-status-legend">
+              ${Object.entries(officeStateLabel).map(([key, text]) => `<span class="office-state-pill ${esc(key)}">${esc(text)}</span>`).join('')}
+            </div>
+            <div class="office-feed">
+              <h3>Visual Timeline</h3>
+              ${visualOfficeFeed || '<p class="muted">No visual office events captured.</p>'}
+            </div>
+            <div class="cockpit-action-toolbar compact-toolbar">
+              <button type="button" id="cockpit-btn-open-office" class="cockpit-action primary">Open Agent Office</button>
+              <button type="button" id="cockpit-btn-office-watch" class="cockpit-action">Refresh State</button>
+            </div>
+          </section>
+        </div>
       </div>
 
-      <div class="team-control-grid cockpit-lower-grid">
-        <section>
-          <h3>Agent Status Overview</h3>
-          <div class="team-roles">${rolesHtml || '<p class="muted">No roles surfaced.</p>'}</div>
-        </section>
-        <section>
-          <h3>Routing Rules</h3>
-          <ul class="team-rules">${routingHtml}</ul>
-          <h3>Playbook Coverage</h3>
-          <div class="team-playbooks">${playbookHtml}</div>
-          <h3>Next Build Steps</h3>
-          <ul class="team-rules">${nextHtml}</ul>
-        </section>
+      <div id="subtab-workbench" class="subtab-content ${activeSubTab === 'workbench' ? 'active' : ''}">
+        <div class="cockpit-hero-grid">
+          <section class="cockpit-network-panel">
+            <div class="cockpit-panel-header">
+              <span>Cyber Office Agent Floor</span>
+            </div>
+            <div id="team-agent-network" class="team-agent-network" aria-label="Interactive holographic agent network"></div>
+            <div class="cockpit-network-footer">
+              ${networkLegend}
+            </div>
+          </section>
+
+          <section class="cockpit-console-panel">
+            <div class="cockpit-panel-header">
+              <span>COMMAND CONSOLE</span>
+            </div>
+            <div class="cockpit-terminal-wrapper">
+              <span class="terminal-prompt">&gt;</span>
+              <input type="text" id="cockpit-terminal-input" placeholder="Type command (e.g. status, verify, help)..." autocomplete="off" />
+            </div>
+            <div id="cockpit-terminal-log" class="cockpit-terminal-log">
+              <div class="terminal-line muted">Welcome to Nova Commander. Type 'help' to see available tactical operations.</div>
+            </div>
+            <div class="cockpit-console-footer">
+              <small>${esc(roster.length || roles.length)} nodes linked · ${esc(sessions.length)} live sessions · ${esc(reports.length)} evidence reports</small>
+            </div>
+          </section>
+
+          <section class="cockpit-overview-panel">
+            <div class="cockpit-panel-header">
+              <span>Mission Overview</span>
+            </div>
+            <div class="team-control-summary cockpit-summary">
+              <div>
+                <span>Control Mode</span>
+                <strong>${esc(data.mode || 'read-only')}</strong>
+              </div>
+              <div>
+                <span>Overall</span>
+                <strong class="text-${healthClass === 'healthy' ? 'green' : healthClass === 'critical' ? 'pink' : 'yellow'}">${esc(label(healthClass))}</strong>
+              </div>
+              ${metricHtml}
+            </div>
+            <div class="cockpit-route-card">
+              <span>Primary Route</span>
+              <strong>Feature/App Build -> Senior Full Stack Developer -> QA / Verification</strong>
+              <small>Evidence-backed closeout through dashboard reports.</small>
+            </div>
+          </section>
+        </div>
+
+        <div class="team-control-grid cockpit-lower-grid">
+          <section>
+            <h3>Running Work</h3>
+            ${runningHtml || '<p class="muted">No running routed work right now.</p>'}
+          </section>
+          <section>
+            <h3>Recent Verification</h3>
+            <div class="verification-list">
+              ${reportsHtml || '<p class="muted">No verification reports found.</p>'}
+            </div>
+          </section>
+        </div>
       </div>
-      <div class="team-control-grid cockpit-lower-grid">
-        <section>
-          <h3>Running Work</h3>
-          ${runningHtml || '<p class="muted">No running routed work right now.</p>'}
-        </section>
-        <section>
-          <h3>Recent Verification</h3>
-          ${reportsHtml || '<p class="muted">No verification reports found.</p>'}
-        </section>
+
+      <div id="subtab-workers" class="subtab-content ${activeSubTab === 'workers' ? 'active' : ''}">
+        <div class="team-control-grid cockpit-lower-grid">
+          <section>
+            <h3>Configured Agents Roster</h3>
+            <div class="team-roles" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;">
+              ${rosterHtml}
+            </div>
+          </section>
+          <section>
+            <h3>Agent Status Overview</h3>
+            <div class="team-roles">${rolesHtml || '<p class="muted">No roles surfaced.</p>'}</div>
+          </section>
+        </div>
+        <div class="team-control-grid cockpit-lower-grid" style="margin-top: 14px;">
+          <section>
+            <h3>Active Instances Telemetry</h3>
+            <div class="cockpit-bars">${uptimeBars || '<p class="muted">No role telemetry.</p>'}</div>
+          </section>
+        </div>
+      </div>
+
+      <div id="subtab-quality" class="subtab-content ${activeSubTab === 'quality' ? 'active' : ''}">
+        <div class="team-control-grid cockpit-lower-grid">
+          <section>
+            <h3>Playbook Coverage Checklist</h3>
+            <div class="team-playbooks">${playbookHtml}</div>
+            <h3 style="margin-top: 20px;">Next Build Steps</h3>
+            <ul class="team-rules">${nextHtml}</ul>
+          </section>
+          <section>
+            <h3>Recent Verification Reports</h3>
+            <div class="verification-list">
+              ${reportsHtml || '<p class="muted">No verification reports found.</p>'}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="subtab-security" class="subtab-content ${activeSubTab === 'security' ? 'active' : ''}">
+        <div class="team-control-grid cockpit-lower-grid">
+          <section>
+            <h3>Security Controls</h3>
+            <p class="muted" style="font-size: 12px; line-height: 1.4; margin-bottom: 12px;">
+              Trigger guardrail scans, trust level checking, audit generation, and supervisor autopilot.
+            </p>
+            <div class="cockpit-action-toolbar" style="margin-top: 0;">
+              <div class="action-group">
+                <span class="group-label">Autonomous Safety & Auditing</span>
+                <div class="group-buttons">
+                  <button type="button" id="cockpit-btn-autopilot" class="cockpit-action primary">Autopilot Mode</button>
+                  <button type="button" id="cockpit-btn-trust-score" class="cockpit-action">Run Trust Score</button>
+                  <button type="button" id="cockpit-btn-ui-design-audit" class="cockpit-action">Design Quality Gate</button>
+                  <button type="button" id="cockpit-btn-audit-export" class="cockpit-action">Export Audit Logs</button>
+                  <button type="button" id="cockpit-btn-doctor-diagnose" class="cockpit-action">Run Doctor</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section>
+            <h3>Security Diagnostics Telemetry</h3>
+            <div class="team-control-summary cockpit-summary">
+              <div>
+                <span>Trust Score Runs</span>
+                <strong>${esc(data.runtime?.summary?.trustScoreRuns || 0)}</strong>
+              </div>
+              <div>
+                <span>Token Attributions</span>
+                <strong>${esc(data.runtime?.summary?.tokenAttributionRuns || 0)}</strong>
+              </div>
+              <div>
+                <span>Audit Exports</span>
+                <strong>${esc(data.runtime?.summary?.auditExports || 0)}</strong>
+              </div>
+              <div>
+                <span>Doctor Runs</span>
+                <strong>${esc(data.runtime?.summary?.doctorRuns || 0)}</strong>
+              </div>
+              <div>
+                <span>UI Design Gate</span>
+                <strong>${esc(data.runtime?.summary?.uiDesignAuditRuns || 0)}</strong>
+              </div>
+              <div>
+                <span>UI Score</span>
+                <strong class="text-${(lastUiAuditRun.score || 0) >= 90 ? 'green' : (lastUiAuditRun.score || 0) >= 70 ? 'yellow' : 'pink'}">${esc(lastUiAuditRun.score || 0)}/100</strong>
+              </div>
+              <div>
+                <span>UI Findings</span>
+                <strong>${esc(uiAuditSummary.findings || 0)}</strong>
+              </div>
+              <div>
+                <span>Watchdog Daemon</span>
+                <strong class="text-${data.runtime?.summary?.watchLaunchAgent?.installed ? 'green' : 'yellow'}">
+                  ${data.runtime?.summary?.watchLaunchAgent?.installed ? 'Installed' : 'Not Configured'}
+                </strong>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="subtab-analytics" class="subtab-content ${activeSubTab === 'analytics' ? 'active' : ''}">
+        <div class="cockpit-analytics-grid">
+          <section class="cockpit-module">
+            <h3>Global Network</h3>
+            <div class="cockpit-mini-map" id="cockpit-mini-map-container">
+              <canvas id="cockpit-minimap-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
+            </div>
+          </section>
+          <section class="cockpit-module">
+            <h3>Performance Analytics</h3>
+            <svg class="cockpit-line-chart" viewBox="0 0 100 100" role="img" aria-label="Agent performance trend">
+              <defs>
+                <linearGradient id="chart-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#00f0ff"/>
+                  <stop offset="50%" stop-color="#38bdf8"/>
+                  <stop offset="100%" stop-color="#34d399"/>
+                </linearGradient>
+              </defs>
+              <polyline points="${esc(performancePoints || '0,60 100,60')}" fill="none" />
+              ${(performancePoints || '').split(' ').filter(Boolean).map(point => {
+                const [x, y] = point.split(',');
+                return `<circle cx="${esc(x)}" cy="${esc(y)}" r="2.5" />`;
+              }).join('')}
+            </svg>
+          </section>
+          <section class="cockpit-module">
+            <h3>Latest Updates</h3>
+            <div class="cockpit-feed">${activityHtml || '<p class="muted">No recent agent activity.</p>'}</div>
+          </section>
+        </div>
+      </div>
+
+      <div id="subtab-routing" class="subtab-content ${activeSubTab === 'routing' ? 'active' : ''}">
+        <div class="team-control-grid cockpit-lower-grid">
+          <section>
+            <h3>Routing Protocol Rules</h3>
+            <ul class="team-rules">${routingHtml}</ul>
+          </section>
+        </div>
       </div>
     </div>
   `);
@@ -826,6 +1413,96 @@ function renderTeamControl(data) {
     }
   }
 
+  // Bind sub-tabs navigation
+  const subtabBtns = document.querySelectorAll('.subtab-btn');
+  const subtabPanels = document.querySelectorAll('.subtab-content');
+
+  subtabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetSubtab = btn.getAttribute('data-subtab');
+      window.dashboardState.activeSubTab = targetSubtab;
+
+      subtabBtns.forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-subtab') === targetSubtab);
+        b.setAttribute('aria-selected', b.getAttribute('data-subtab') === targetSubtab);
+      });
+
+      subtabPanels.forEach(panel => {
+        panel.classList.toggle('active', panel.id === `subtab-${targetSubtab}`);
+      });
+
+      if (typeof playCommandSound === 'function') {
+        playCommandSound('confirm');
+      }
+
+      // Fire a resize event so WebGL canvases adapt to newly shown container sizes
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 50);
+    });
+  });
+
+  // Action Button Setup Helper
+  function setupActionButton(btnId, apiPath, actionName, successCallback) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    
+    let resetTimeout = null;
+    btn.addEventListener('click', async () => {
+      termInput?.focus();
+      
+      if (!btn.classList.contains('confirm-prompt')) {
+        playCommandSound('tap');
+        btn.classList.add('confirm-prompt');
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = 'Confirm?';
+        
+        resetTimeout = setTimeout(() => {
+          btn.classList.remove('confirm-prompt');
+          btn.textContent = btn.dataset.originalText;
+        }, 3000);
+      } else {
+        if (resetTimeout) clearTimeout(resetTimeout);
+        btn.classList.remove('confirm-prompt');
+        btn.classList.add('is-loading');
+        
+        appendTerminalLine(`Triggering ${actionName}...`, 'loading');
+        
+        try {
+          const res = await fetch(apiPath);
+          const resData = await res.json();
+          if (resData.ok || resData.status === 'healthy' || resData.hasOwnProperty('overall')) {
+            appendTerminalLine(`${actionName} successful!`, 'success');
+            if (successCallback) successCallback(resData);
+            if (typeof load === 'function') {
+              load(true);
+            }
+          } else {
+            appendTerminalLine(`${actionName} failed: ${resData.error || resData.output || 'unknown error'}`, 'error');
+          }
+        } catch (err) {
+          appendTerminalLine(`${actionName} error: ${err.message}`, 'error');
+        } finally {
+          btn.classList.remove('is-loading');
+          btn.textContent = btn.dataset.originalText;
+        }
+      }
+    });
+  }
+
+  // Setup Actions
+  setupActionButton('cockpit-btn-verify', '/api/run-verification', 'Verification Gate');
+  setupActionButton('cockpit-btn-trust-score', '/api/run-trust-score', 'Trust Score');
+  setupActionButton('cockpit-btn-ui-design-audit', '/api/run-ui-design-audit', 'Design Quality Gate');
+  setupActionButton('cockpit-btn-audit-export', '/api/multiagent-audit-export', 'Audit Export');
+  setupActionButton('cockpit-btn-doctor-diagnose', '/api/run-doctor', 'Doctor Diagnostics');
+  setupActionButton('cockpit-btn-autopilot', '/api/run-autopilot', 'Autopilot Loop');
+  setupActionButton('cockpit-btn-supervisor', '/api/run-supervisor', 'Supervisor Routing');
+  setupActionButton('cockpit-btn-worker', '/api/run-worker', 'Worker Handoff');
+  setupActionButton('cockpit-btn-quality-review', '/api/run-quality-review', 'Quality Gate Review');
+  setupActionButton('cockpit-btn-token-attribution', '/api/run-token-attribution', 'Token Attribution');
+  setupActionButton('cockpit-btn-watch', '/api/run-watch', 'Scheduled Watch');
+
   async function executeVerification() {
     appendTerminalLine('Executing task verification gate...', 'loading');
     try {
@@ -834,7 +1511,6 @@ function renderTeamControl(data) {
       if (resData.ok) {
         appendTerminalLine(`Verification Passed: ${resData.taskId}`, 'success');
         appendTerminalLine(`Report: outputs/verification/${resData.taskId}.json`, 'muted');
-        // Force reload dashboard telemetry to show new report card immediately
         if (typeof load === 'function') {
           load(true);
         }
@@ -868,6 +1544,15 @@ function renderTeamControl(data) {
           appendTerminalLine('  agents   - List configured OpenClaw agents', 'muted');
           appendTerminalLine('  tasks    - Print running & queued background tasks', 'muted');
           appendTerminalLine('  sessions - List active agent conversation threads', 'muted');
+          appendTerminalLine('  goals    - Print orchestrator goal queue', 'muted');
+          appendTerminalLine('  dag      - Print deterministic DAG lifecycle counts', 'muted');
+          appendTerminalLine('  vibe     - Print Vibe Graph Draft template', 'muted');
+          appendTerminalLine('  pipeline - Print lifecycle counts', 'muted');
+          appendTerminalLine('  token    - Run token/context attribution', 'muted');
+          appendTerminalLine('  quality  - Run final quality gate review', 'muted');
+          appendTerminalLine('  design   - Run UI design quality gate', 'muted');
+          appendTerminalLine('  office   - Print visual office state and open target URL', 'muted');
+          appendTerminalLine('  watch    - Run scheduled local watch', 'muted');
           appendTerminalLine('  logs     - Show recent watchdog log entries', 'muted');
           appendTerminalLine('  clear    - Clear console logs', 'muted');
         } else if (cmd === 'clear') {
@@ -899,6 +1584,80 @@ function renderTeamControl(data) {
             runningTasks.forEach(t => {
               appendTerminalLine(`  ${t.taskId}: ${t.label || t.task} [${t.status}]`, 'warn');
             });
+          }
+        } else if (cmd === 'goals') {
+          if (queue.length === 0) {
+            appendTerminalLine('No orchestrator goals captured.', 'info');
+          } else {
+            appendTerminalLine('Goal Orchestrator Queue:', 'info');
+            queue.slice(0, 8).forEach(t => {
+              appendTerminalLine(`  ${t.taskId}: ${t.status} -> ${t.assignedRole || 'unassigned'} | ${t.title || 'goal'}`, t.status === 'done' ? 'muted' : 'warn');
+            });
+          }
+        } else if (cmd === 'pipeline') {
+          appendTerminalLine('Agent Pipeline Lifecycle:', 'info');
+          lifecycleSteps.forEach(([key, name]) => {
+            appendTerminalLine(`  ${name}: ${runtimeSummary[key] || 0}`, 'muted');
+          });
+        } else if (cmd === 'dag') {
+          appendTerminalLine('Deterministic DAG View:', 'info');
+          dagSteps.forEach((step, index) => {
+            const arrow = index < dagSteps.length - 1 ? ' ->' : '';
+            appendTerminalLine(`  ${String(index + 1).padStart(2, '0')} ${step.name}: ${step.count}${arrow}`, step.status === 'idle' ? 'muted' : 'info');
+          });
+          appendTerminalLine(`  Human gates pending: ${runtimeSummary.needsApproval || 0}`, runtimeSummary.needsApproval ? 'warn' : 'muted');
+        } else if (cmd === 'vibe') {
+          appendTerminalLine('Vibe Graph Draft:', 'info');
+          vibeDraftNodes.forEach((node, index) => {
+            const arrow = index < vibeDraftNodes.length - 1 ? ' ->' : '';
+            appendTerminalLine(`  ${String(index + 1).padStart(2, '0')} ${node.type}: ${node.label}${arrow}`, node.type === 'Human' ? 'warn' : 'muted');
+          });
+          appendTerminalLine('Draft mode only: explicit approval required before runtime execution.', 'success');
+        } else if (cmd === 'token') {
+          appendTerminalLine('Triggering token/context attribution...', 'loading');
+          try {
+            const res = await fetch('/api/run-token-attribution');
+            const resData = await res.json();
+            appendTerminalLine(resData.ok ? 'Token attribution complete.' : `Token attribution failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
+            if (typeof load === 'function') load(true);
+          } catch (err) {
+            appendTerminalLine(`Token attribution error: ${err.message}`, 'error');
+          }
+        } else if (cmd === 'quality') {
+          appendTerminalLine('Triggering final quality gate...', 'loading');
+          try {
+            const res = await fetch('/api/run-quality-review');
+            const resData = await res.json();
+            appendTerminalLine(resData.ok ? 'Quality gate complete.' : `Quality gate failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
+            if (typeof load === 'function') load(true);
+          } catch (err) {
+            appendTerminalLine(`Quality gate error: ${err.message}`, 'error');
+          }
+        } else if (cmd === 'design') {
+          appendTerminalLine('Triggering UI design quality gate...', 'loading');
+          try {
+            const res = await fetch('/api/run-ui-design-audit');
+            const resData = await res.json();
+            appendTerminalLine(resData.ok ? `Design gate complete: ${resData.report?.readiness || 'captured'} score=${resData.report?.score ?? 'n/a'}` : `Design gate failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
+            if (typeof load === 'function') load(true);
+          } catch (err) {
+            appendTerminalLine(`Design gate error: ${err.message}`, 'error');
+          }
+        } else if (cmd === 'office') {
+          appendTerminalLine('Nova Agent Office v0.2:', 'info');
+          officeAgents.forEach(agent => {
+            appendTerminalLine(`  ${agent.name}: ${officeStateLabel[agent.state] || agent.state} · ${agent.bubble}`, agent.state === 'waiting' ? 'warn' : 'muted');
+          });
+          appendTerminalLine('  Local visual office: http://127.0.0.1:19000', 'muted');
+        } else if (cmd === 'watch') {
+          appendTerminalLine('Triggering local scheduled watch...', 'loading');
+          try {
+            const res = await fetch('/api/run-watch');
+            const resData = await res.json();
+            appendTerminalLine(resData.ok ? 'Watch complete.' : `Watch failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
+            if (typeof load === 'function') load(true);
+          } catch (err) {
+            appendTerminalLine(`Watch error: ${err.message}`, 'error');
           }
         } else if (cmd === 'sessions') {
           if (sessions.length === 0) {
@@ -932,18 +1691,10 @@ function renderTeamControl(data) {
     });
   }
 
-  // Bind command bar buttons
-  const btnVerify = document.getElementById('cockpit-btn-verify');
   const btnLogs = document.getElementById('cockpit-btn-logs');
   const btnDeploy = document.getElementById('cockpit-btn-deploy');
-
-  if (btnVerify) {
-    btnVerify.addEventListener('click', async () => {
-      termInput?.focus();
-      appendTerminalLine('> verify', 'command');
-      await executeVerification();
-    });
-  }
+  const btnOpenOffice = document.getElementById('cockpit-btn-open-office');
+  const btnOfficeWatch = document.getElementById('cockpit-btn-office-watch');
 
   if (btnLogs) {
     btnLogs.addEventListener('click', () => {
@@ -968,6 +1719,29 @@ function renderTeamControl(data) {
       });
     });
   }
+
+  if (btnOpenOffice) {
+    btnOpenOffice.addEventListener('click', () => {
+      termInput?.focus();
+      appendTerminalLine('> office', 'command');
+      appendTerminalLine('Opening local visual office at http://127.0.0.1:19000', 'info');
+      window.open('http://127.0.0.1:19000', '_blank', 'noopener,noreferrer');
+    });
+  }
+
+  if (btnOfficeWatch) {
+    btnOfficeWatch.addEventListener('click', async () => {
+      termInput?.focus();
+      appendTerminalLine('Refreshing visual office state...', 'loading');
+      try {
+        await getJson('/api/team-control?refresh=1');
+        appendTerminalLine('Visual office state refreshed.', 'success');
+        if (typeof load === 'function') load(true);
+      } catch (err) {
+        appendTerminalLine(`Visual office refresh error: ${err.message}`, 'error');
+      }
+    });
+  }
 }
 
 let teamNetworkScene = null;
@@ -975,6 +1749,7 @@ let teamNetworkRenderer = null;
 let teamNetworkCamera = null;
 let teamNetworkFrame = null;
 let teamNetworkResizeHandler = null;
+let serverBlinkingLights = [];
 
 let miniScene = null;
 let miniRenderer = null;
@@ -1014,8 +1789,22 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
   }));
 
   teamNetworkScene = new THREE.Scene();
-  teamNetworkCamera = new THREE.PerspectiveCamera(52, width / height, 0.1, 1000);
-  teamNetworkCamera.position.set(0, 0, 150);
+
+  // Sci-Fi Key & Fill Lighting
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.48);
+  teamNetworkScene.add(ambientLight);
+
+  const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.85);
+  dirLight1.position.set(50, 150, 30);
+  teamNetworkScene.add(dirLight1);
+
+  const dirLight2 = new THREE.DirectionalLight(0x00f0ff, 0.45);
+  dirLight2.position.set(-50, -30, -30);
+  teamNetworkScene.add(dirLight2);
+
+  teamNetworkCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+  teamNetworkCamera.position.set(0, 95, 135);
+  teamNetworkCamera.lookAt(0, -10, 0);
 
   teamNetworkRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
   teamNetworkRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1025,96 +1814,475 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
   const root = new THREE.Group();
   teamNetworkScene.add(root);
 
-  const globeGeometry = new THREE.SphereGeometry(48, 48, 24);
-  const globeMaterial = new THREE.MeshBasicMaterial({
-    color: statusColors[health] || statusColors.healthy,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.16,
-  });
-  root.add(new THREE.Mesh(globeGeometry, globeMaterial));
+  // Initialize server blinking lights array
+  serverBlinkingLights = [];
 
-  const ringMaterial = new THREE.LineBasicMaterial({
-    color: 0x00f0ff,
-    transparent: true,
-    opacity: 0.2,
-    blending: THREE.AdditiveBlending,
+  // 1. Draw solid steel floor plate grid system
+  const plateGeo = new THREE.BoxGeometry(23, 0.4, 23);
+  const plateMat = new THREE.MeshPhongMaterial({
+    color: 0x111827, // dark metallic charcoal
+    shininess: 90,
+    specular: 0x374151
   });
-  [0, Math.PI / 2, Math.PI / 3].forEach((rotation, index) => {
-    const ring = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, 62 + index * 7, 62 + index * 7, 0, Math.PI * 2).getPoints(160)),
-      ringMaterial
-    );
-    ring.rotation.x = rotation;
-    ring.rotation.y = index * 0.35;
-    root.add(ring);
+  // Draw 16 floor plates arranged in 4x4 layout
+  for (let z = -2; z <= 1; z++) {
+    for (let x = -2; x <= 1; x++) {
+      const plate = new THREE.Mesh(plateGeo, plateMat);
+      plate.position.set(x * 25 + 12.5, -12.2, z * 25 + 12.5);
+      root.add(plate);
+    }
+  }
+
+  // Neon glowing conduit lines running in the gaps of the plates
+  const conduitGeo = new THREE.BoxGeometry(110, 0.2, 0.2);
+  const conduitMat = new THREE.MeshBasicMaterial({ color: 0x00d8ff, transparent: true, opacity: 0.15 });
+  for (let z = -1; z <= 1; z++) {
+    const line = new THREE.Mesh(conduitGeo, conduitMat);
+    line.position.set(0, -12, z * 25);
+    root.add(line);
+  }
+  const conduitGeoV = new THREE.BoxGeometry(0.2, 0.2, 110);
+  for (let x = -1; x <= 1; x++) {
+    const line = new THREE.Mesh(conduitGeoV, conduitMat);
+    line.position.set(x * 25, -12, 0);
+    root.add(line);
+  }
+
+  // 2. Draw Server Racks in corners
+  const serverGeo = new THREE.BoxGeometry(6, 20, 6);
+  const serverMat = new THREE.MeshPhongMaterial({ color: 0x070b12, shininess: 40 });
+  const cornerPositions = [
+    { x: -50, z: -50 },
+    { x: 50, z: -50 },
+    { x: -50, z: 50 },
+    { x: 50, z: 50 }
+  ];
+  
+  cornerPositions.forEach(pos => {
+    const server = new THREE.Mesh(serverGeo, serverMat);
+    server.position.set(pos.x, -2, pos.z);
+    root.add(server);
+
+    // Blinking lights on front face of server
+    const lightCount = 8;
+    for (let l = 0; l < lightCount; l++) {
+      const lightGeo = new THREE.SphereGeometry(0.18, 6, 6);
+      const isRed = Math.random() > 0.5;
+      const lightMat = new THREE.MeshBasicMaterial({
+        color: isRed ? 0xff3b5c : 0x22c55e,
+        transparent: true,
+        opacity: 0.85
+      });
+      const lightMesh = new THREE.Mesh(lightGeo, lightMat);
+      // Offset lights on front of rack
+      lightMesh.position.set(pos.x + 2.9, -10 + l * 2.2, pos.z + (Math.random() - 0.5) * 4);
+      root.add(lightMesh);
+      serverBlinkingLights.push(lightMesh);
+    }
+  });
+
+  // 3. Draw vertical cyan glowing tubes in corners
+  const tubeGeo = new THREE.CylinderGeometry(0.3, 0.3, 26, 8);
+  const tubeMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.6 });
+  const tubePositions = [
+    { x: -53, z: -53 },
+    { x: 53, z: -53 },
+    { x: -53, z: 53 },
+    { x: 53, z: 53 }
+  ];
+  tubePositions.forEach(pos => {
+    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+    tube.position.set(pos.x, 1, pos.z);
+    root.add(tube);
   });
 
   const nodeGroup = new THREE.Group();
   root.add(nodeGroup);
   const nodePositions = [];
-  const nodeCount = Math.max(rolesForNodes.length, 6);
-  for (let i = 0; i < nodeCount; i += 1) {
-    const role = rolesForNodes[i % Math.max(rolesForNodes.length, 1)] || {};
-    const theta = (i / nodeCount) * Math.PI * 2;
-    const phi = Math.acos(-0.72 + (1.44 * (i + 0.5)) / nodeCount);
-    const radius = 58;
-    const position = new THREE.Vector3(
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
-    );
-    nodePositions.push(position);
+  
+  // Custom desk configuration mapping for each role/agent type
+  const getOfficeConfig = (roleId, index) => {
+    const cleanId = String(roleId || '').toLowerCase();
+    if (cleanId.includes('orchestrator')) {
+      return { name: 'Orchestrator Command Hub', x: 0, z: -10, color: 0x00f0ff };
+    }
+    if (cleanId.includes('reader') || cleanId.includes('repo')) {
+      return { name: 'Repo Reader Archives', x: -35, z: 25, color: 0x38bdf8 };
+    }
+    if (cleanId.includes('qa') || cleanId.includes('verify') || cleanId.includes('quality')) {
+      return { name: 'QA Verification Lab', x: 35, z: 25, color: 0x34d399 };
+    }
+    if (cleanId.includes('developer') || cleanId.includes('stack') || cleanId.includes('engineer')) {
+      return { name: 'Developer Suite', x: -35, z: -25, color: 0xa78bfa };
+    }
+    if (cleanId.includes('support') || cleanId.includes('rca') || cleanId.includes('sre')) {
+      return { name: 'SRE Command Tower', x: 35, z: -25, color: 0xffa133 };
+    }
+    if (cleanId.includes('automation') || cleanId.includes('cron') || cleanId.includes('workflow')) {
+      return { name: 'Automation Gateway', x: 0, z: 40, color: 0xff4766 };
+    }
+    if (cleanId.includes('dashboard') || cleanId.includes('control')) {
+      return { name: 'Dashboard Interface Room', x: 0, z: -40, color: 0x22d3ee };
+    }
+    // Fallback circular layout
+    const theta = (index / Math.max(rolesForNodes.length, 1)) * Math.PI * 2;
+    return {
+      name: `Desk Zone ${index + 1}`,
+      x: Math.sin(theta) * 35,
+      z: Math.cos(theta) * 35,
+      color: 0x00f0ff
+    };
+  };
+
+  const roomsList = [];
+  const coreList = [];
+
+  for (let i = 0; i < rolesForNodes.length; i += 1) {
+    const role = rolesForNodes[i] || {};
+    const config = getOfficeConfig(role.id || role.name, i);
     const status = failedTasks.length && i === 0 ? 'warning' : runningTasks.length && i === 1 ? 'active' : role.status || 'healthy';
-    const nodeMaterial = new THREE.MeshBasicMaterial({
-      color: statusColors[status] || statusColors.healthy,
-      transparent: true,
-      opacity: 0.94,
-    });
-    const node = new THREE.Mesh(new THREE.SphereGeometry(status === 'warning' ? 3.2 : 2.4, 18, 18), nodeMaterial);
-    node.position.copy(position);
-    node.userData = { label: role.name || role.id || `Agent ${i + 1}`, status };
-    nodeGroup.add(node);
+    const colorHex = statusColors[status] || config.color || 0x00f0ff;
+
+    let podMesh;
+
+    if (i === 0) {
+      // CENTER Orchestrator: Render a large circular Command Table
+      const baseGeo = new THREE.CylinderGeometry(8, 9, 3.5, 8);
+      const baseMat = new THREE.MeshPhongMaterial({
+        color: 0x1e293b,
+        shininess: 80,
+        specular: 0x334155
+      });
+      const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+      baseMesh.position.set(config.x, -10.5, config.z);
+      root.add(baseMesh);
+
+      // Glowing table boundary rim
+      const rimGeo = new THREE.CylinderGeometry(9.1, 9.1, 0.4, 8, 1, true);
+      const rimMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.65 });
+      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+      rimMesh.position.set(config.x, -8.7, config.z);
+      root.add(rimMesh);
+
+      // Huge Holographic projection on top
+      const holoGeo = new THREE.SphereGeometry(6, 12, 12);
+      const holoMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.65,
+        blending: THREE.AdditiveBlending
+      });
+      podMesh = new THREE.Mesh(holoGeo, holoMat);
+      podMesh.position.set(config.x, -3, config.z);
+
+      // Revolving projection rings
+      const holoRing1 = new THREE.Mesh(
+        new THREE.RingGeometry(7.5, 10, 16),
+        new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.45, side: THREE.DoubleSide })
+      );
+      holoRing1.rotation.x = Math.PI * 0.5;
+      holoRing1.position.y = 2.5;
+      podMesh.add(holoRing1);
+
+      const holoRing2 = new THREE.Mesh(
+        new THREE.RingGeometry(8, 12, 16),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+      );
+      holoRing2.rotation.x = Math.PI * 0.35;
+      holoRing2.position.y = -2.5;
+      podMesh.add(holoRing2);
+
+      // Add a small energy core inside
+      const coreGeo = new THREE.CylinderGeometry(1.2, 1.2, 8, 8);
+      const coreMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.8 });
+      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+      podMesh.add(coreMesh);
+
+      podMesh.userData = {
+        label: role.name || role.id || `Agent ${i + 1}`,
+        status: status,
+        roomName: config.name,
+        roomMesh: rimMesh,
+        coreMesh: coreMesh,
+        holoRingMesh: holoRing1,
+        baseColor: colorHex
+      };
+
+      nodeGroup.add(podMesh);
+      nodePositions.push(podMesh.position);
+    } else {
+      // REGULAR WORKSTATIONS (Technicians at Desks)
+      // 1. Solid floor platform
+      const platformGeo = new THREE.CylinderGeometry(11, 12, 1.5, 16);
+      const platformMat = new THREE.MeshPhongMaterial({
+        color: 0x1e293b,
+        shininess: 70,
+        specular: 0x334155
+      });
+      const platformMesh = new THREE.Mesh(platformGeo, platformMat);
+      platformMesh.position.set(config.x, -11.25, config.z);
+      root.add(platformMesh);
+
+      // Glowing rim around the platform
+      const rimGeo = new THREE.CylinderGeometry(12.1, 12.1, 0.25, 16, 1, true);
+      const rimMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide
+      });
+      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+      rimMesh.position.set(config.x, -11.25, config.z);
+      root.add(rimMesh);
+
+      // 2. Draw solid semi-circular partition wall (Sci-Fi cubicle wall)
+      const partitionGeo = new THREE.CylinderGeometry(9, 9, 5, 16, 1, true, 0, Math.PI * 1.35);
+      const partitionMat = new THREE.MeshPhongMaterial({
+        color: 0x334155,
+        shininess: 40,
+        specular: 0x475569,
+        side: THREE.DoubleSide
+      });
+      const partitionMesh = new THREE.Mesh(partitionGeo, partitionMat);
+      partitionMesh.position.set(config.x, -8.75, config.z);
+      partitionMesh.rotation.y = Math.PI * 0.25 + i * 0.5; // Rotate partition slightly uniquely
+      root.add(partitionMesh);
+
+      // Glowing neon cap trim running along the top of the partition wall
+      const trimGeo = new THREE.CylinderGeometry(9.1, 9.1, 0.35, 16, 1, true, 0, Math.PI * 1.35);
+      const trimMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.75,
+        side: THREE.DoubleSide
+      });
+      const trimMesh = new THREE.Mesh(trimGeo, trimMat);
+      trimMesh.position.set(config.x, -6.1, config.z);
+      trimMesh.rotation.y = Math.PI * 0.25 + i * 0.5;
+      root.add(trimMesh);
+      roomsList.push(trimMesh); // Set to roomMesh for hover highlight
+
+      // 3. Central Hexagonal Control Desk
+      const deskGeo = new THREE.CylinderGeometry(4.5, 4.8, 2.2, 6);
+      const deskMat = new THREE.MeshPhongMaterial({
+        color: 0x0f172a,
+        shininess: 50
+      });
+      const deskMesh = new THREE.Mesh(deskGeo, deskMat);
+      deskMesh.position.set(config.x, -10.15, config.z);
+      root.add(deskMesh);
+
+      // Keyboard details
+      const keyboardGeo = new THREE.BoxGeometry(2.4, 0.08, 0.9);
+      const keyboardMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.65 });
+      const keyboard = new THREE.Mesh(keyboardGeo, keyboardMat);
+      keyboard.position.set(config.x + Math.sin(Math.PI * 0.25 + i * 0.5 + Math.PI) * 1.8, -8.95, config.z + Math.cos(Math.PI * 0.25 + i * 0.5 + Math.PI) * 1.8);
+      keyboard.rotation.y = Math.PI * 0.25 + i * 0.5 + Math.PI;
+      root.add(keyboard);
+
+      // 4. Draw a capsule pod (the main interactive element)
+      const podGeo = new THREE.CylinderGeometry(2, 2, 9, 12, 1);
+      const podMat = new THREE.MeshPhongMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.22,
+        shininess: 100,
+        specular: 0xffffff,
+        depthWrite: false
+      });
+      podMesh = new THREE.Mesh(podGeo, podMat);
+      podMesh.position.set(config.x, -5.5, config.z);
+
+      // Top metal cap for capsule
+      const capTopGeo = new THREE.CylinderGeometry(2.1, 2.1, 0.6, 12);
+      const capMat = new THREE.MeshPhongMaterial({
+        color: 0x475569,
+        shininess: 80,
+        specular: 0x64748b
+      });
+      const capTopMesh = new THREE.Mesh(capTopGeo, capMat);
+      capTopMesh.position.y = 4.8;
+      podMesh.add(capTopMesh);
+
+      // Bottom metal cap for capsule
+      const capBotMesh = new THREE.Mesh(capTopGeo, capMat);
+      capBotMesh.position.y = -4.8;
+      podMesh.add(capBotMesh);
+
+      // 5. Draw the inner glowing status core cylinder
+      const coreGeo = new THREE.CylinderGeometry(0.8, 0.8, 8, 8);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.72
+      });
+      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+      coreMesh.position.y = 0;
+      podMesh.add(coreMesh);
+      coreList.push(coreMesh);
+
+      // 6. Draw two floating monitors angled towards the center
+      const monitorGroup = new THREE.Group();
+      
+      const monitorGeo = new THREE.BoxGeometry(2.4, 1.6, 0.1);
+      const monitorMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.65
+      });
+      
+      const screen1 = new THREE.Mesh(monitorGeo, monitorMat);
+      screen1.position.set(-3.2, 0, 1.8);
+      screen1.rotation.y = Math.PI * 0.15;
+      monitorGroup.add(screen1);
+      
+      const screen2 = new THREE.Mesh(monitorGeo, monitorMat);
+      screen2.position.set(3.2, 0, 1.8);
+      screen2.rotation.y = -Math.PI * 0.15;
+      monitorGroup.add(screen2);
+      
+      monitorGroup.position.y = -1; // Lower floating position relative to podMesh center
+      podMesh.add(monitorGroup);
+
+      // Glowing revolving holographic radar ring
+      const holoRingGeo = new THREE.RingGeometry(2.5, 4.5, 16);
+      const holoRingMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.38,
+        side: THREE.DoubleSide
+      });
+      const holoRingMesh = new THREE.Mesh(holoRingGeo, holoRingMat);
+      holoRingMesh.position.y = 5.2;
+      holoRingMesh.rotation.x = Math.PI * 0.5; // Lay it flat horizontally
+      podMesh.add(holoRingMesh);
+
+      // 7. Render a Sci-Fi Technician Chair
+      const chairGroup = new THREE.Group();
+      const chairStandGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.8, 8);
+      const chairStandMat = new THREE.MeshPhongMaterial({ color: 0x475569, shininess: 80 });
+      const chairStand = new THREE.Mesh(chairStandGeo, chairStandMat);
+      chairStand.position.y = -10.9;
+      chairGroup.add(chairStand);
+
+      const seatGeo = new THREE.BoxGeometry(2, 0.3, 2);
+      const seatMat = new THREE.MeshPhongMaterial({ color: 0x0f172a, shininess: 30 });
+      const seat = new THREE.Mesh(seatGeo, seatMat);
+      seat.position.y = -9.9;
+      chairGroup.add(seat);
+
+      const backGeo = new THREE.BoxGeometry(2, 2.2, 0.3);
+      const back = new THREE.Mesh(backGeo, seatMat);
+      back.position.set(0, -8.7, 0.95);
+      chairGroup.add(back);
+
+      const chairAngle = Math.PI * 0.25 + i * 0.5 + Math.PI * 0.67;
+      const chairDist = 6.2;
+      const chairX = config.x + Math.sin(chairAngle) * chairDist;
+      const chairZ = config.z + Math.cos(chairAngle) * chairDist;
+      chairGroup.position.set(chairX, 0, chairZ);
+      chairGroup.rotation.y = chairAngle + Math.PI;
+      root.add(chairGroup);
+
+      // 8. Render the Technician
+      const techGroup = new THREE.Group();
+      const torsoGeo = new THREE.CylinderGeometry(0.55, 0.65, 1.6, 8);
+      const torsoMat = new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 20 });
+      const torso = new THREE.Mesh(torsoGeo, torsoMat);
+      torso.position.y = -9.0;
+      techGroup.add(torso);
+
+      const headGeo = new THREE.SphereGeometry(0.48, 10, 10);
+      const headMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 60 });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = -8.0;
+      techGroup.add(head);
+
+      const visorGeo = new THREE.BoxGeometry(0.6, 0.25, 0.2);
+      const visorMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+      const visor = new THREE.Mesh(visorGeo, visorMat);
+      visor.position.set(0, -7.95, -0.4);
+      techGroup.add(visor);
+
+      const armGeo = new THREE.CylinderGeometry(0.18, 0.15, 1.1, 6);
+      const armMat = new THREE.MeshPhongMaterial({ color: 0x475569 });
+      const leftArm = new THREE.Mesh(armGeo, armMat);
+      leftArm.position.set(-0.7, -8.8, -0.4);
+      leftArm.rotation.x = -Math.PI * 0.35;
+      leftArm.rotation.z = Math.PI * 0.1;
+      techGroup.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, armMat);
+      rightArm.position.set(0.7, -8.8, -0.4);
+      rightArm.rotation.x = -Math.PI * 0.35;
+      rightArm.rotation.z = -Math.PI * 0.1;
+      techGroup.add(rightArm);
+
+      techGroup.position.set(chairX, 0, chairZ);
+      techGroup.rotation.y = chairAngle + Math.PI;
+      root.add(techGroup);
+
+      podMesh.userData = {
+        label: role.name || role.id || `Agent ${i + 1}`,
+        status: status,
+        roomName: config.name,
+        roomMesh: trimMesh, // Wall trim glows white on hover
+        coreMesh: coreMesh, // Inner core glows white on hover
+        holoRingMesh: holoRingMesh, // Rotating holo ring glows white on hover
+        baseColor: colorHex
+      };
+
+      nodeGroup.add(podMesh);
+      nodePositions.push(podMesh.position);
+    }
   }
 
+  // Draw link lines connecting Orchestrator Command Hub (node 0) to all other rooms
   const linePositions = [];
-  for (let i = 0; i < nodePositions.length; i += 1) {
-    const a = nodePositions[i];
-    const b = nodePositions[(i + 2) % nodePositions.length];
-    linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  const orchestratorPos = nodePositions[0] || new THREE.Vector3(0, -5.5, -10);
+  for (let i = 1; i < nodePositions.length; i += 1) {
+    const pos = nodePositions[i];
+    linePositions.push(orchestratorPos.x, orchestratorPos.y, orchestratorPos.z, pos.x, pos.y, pos.z);
   }
-  const links = new THREE.LineSegments(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3)),
-    new THREE.LineBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.22 + Math.min(reports.length, 6) * 0.015,
-      blending: THREE.AdditiveBlending,
-    })
-  );
-  nodeGroup.add(links);
 
-  // Floating space dust particles
+  let links = null;
+  if (linePositions.length > 0) {
+    links = new THREE.LineSegments(
+      new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3)),
+      new THREE.LineBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.25 + Math.min(reports.length, 6) * 0.02,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    nodeGroup.add(links);
+  }
+
+  // Floating matrix space dust particles
   const particleGeometry = new THREE.BufferGeometry();
-  const particlePointsCount = 200;
+  const particlePointsCount = 180;
   const posArray = new Float32Array(particlePointsCount * 3);
-  for (let i = 0; i < particlePointsCount * 3; i++) {
+  for (let i = 0; i < particlePointsCount * 3; i += 3) {
     posArray[i] = (Math.random() - 0.5) * 110;
+    posArray[i+1] = -12 + Math.random() * 40; // float above floor
+    posArray[i+2] = (Math.random() - 0.5) * 110;
   }
   particleGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
   const particleMaterial = new THREE.PointsMaterial({
-    size: 1.2,
+    size: 1.4,
     color: statusColors[health] || 0x00f0ff,
     transparent: true,
-    opacity: 0.45,
+    opacity: 0.5,
     blending: THREE.AdditiveBlending
   });
   const particlesMesh = new THREE.Points(particleGeometry, particleMaterial);
   root.add(particlesMesh);
 
-  // Moving data transmission pulses along connections
+  // Moving data transmission pulses along links (from center Orchestrator to target pods)
   const pulses = [];
-  const pulseGeometry = new THREE.SphereGeometry(0.7, 8, 8);
+  const pulseGeometry = new THREE.SphereGeometry(0.8, 8, 8);
   const pulseMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -1122,13 +2290,13 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
     blending: THREE.AdditiveBlending
   });
   if (nodePositions.length > 1) {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 1; i < nodePositions.length; i++) {
       const mesh = new THREE.Mesh(pulseGeometry, pulseMaterial);
       root.add(mesh);
       pulses.push({
         mesh,
-        sourceIdx: Math.floor(Math.random() * nodePositions.length),
-        targetIdx: Math.floor(Math.random() * nodePositions.length),
+        sourceIdx: 0, // Orchestrator Hub
+        targetIdx: i,
         progress: Math.random()
       });
     }
@@ -1137,7 +2305,7 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
   // Label configuration
   const label = document.createElement('div');
   label.className = 'team-agent-network-label';
-  label.textContent = `${nodePositions.length} AGENT NODES / ${runningTasks.length} ACTIVE ROUTES`;
+  label.textContent = `${nodePositions.length} DESK ROOMS ACTIVE / STAR OFFICE PROTOCOL`;
   container.appendChild(label);
 
   // Tooltip configuration
@@ -1163,7 +2331,6 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
   const mouse = new THREE.Vector2(-2, -2);
   let hoveredNode = null;
 
-  // Pointer Event listeners
   const onPointerDown = (e) => {
     isDragging = true;
     dom.style.cursor = 'grabbing';
@@ -1213,8 +2380,8 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
     const t = clock.getElapsedTime();
 
     if (!isDragging) {
-      targetRotationY += 0.0025;
-      targetRotationX = Math.sin(t * 0.35) * 0.04;
+      targetRotationY += 0.002;
+      targetRotationX = 0.4 + Math.sin(t * 0.25) * 0.03; // tilt constant
     }
 
     currentRotationY += (targetRotationY - currentRotationY) * 0.05;
@@ -1223,20 +2390,25 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
     root.rotation.y = currentRotationY;
     root.rotation.x = currentRotationX;
 
-    particlesMesh.rotation.y = t * 0.04;
-    particlesMesh.rotation.x = t * 0.015;
+    particlesMesh.rotation.y = t * 0.02;
 
-    // Animate data pulses
+    // Blinking server lights animation
+    if (serverBlinkingLights && serverBlinkingLights.length) {
+      serverBlinkingLights.forEach((light, idx) => {
+        if (Math.sin(t * 7 + idx) > 0.55) {
+          light.material.opacity = 0.95;
+        } else {
+          light.material.opacity = 0.15;
+        }
+      });
+    }
+
+    // Animate data pulses from Orchestrator (center) to targets
     if (nodePositions.length > 1) {
       pulses.forEach(p => {
-        if (p.sourceIdx === p.targetIdx) {
-          p.targetIdx = (p.sourceIdx + 1) % nodePositions.length;
-        }
-        p.progress += 0.008;
+        p.progress += 0.006;
         if (p.progress >= 1) {
           p.progress = 0;
-          p.sourceIdx = p.targetIdx;
-          p.targetIdx = Math.floor(Math.random() * nodePositions.length);
         }
         const pSource = nodePositions[p.sourceIdx];
         const pTarget = nodePositions[p.targetIdx];
@@ -1244,14 +2416,15 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
       });
     }
 
-    // Scale nodes dynamically
+    // Scale nodes dynamically and rotate cylinders for a high-tech scanning effect
     nodeGroup.children.forEach((node, index) => {
       if (node.isMesh) {
+        node.rotation.y = t * 0.8 + index; // Spin the cylinders
         let baseScale = 1;
         if (node === hoveredNode) {
-          baseScale = 1.6;
+          baseScale = 1.4;
         }
-        const scale = baseScale + Math.sin(t * 2.4 + index) * 0.12;
+        const scale = baseScale + Math.sin(t * 2.4 + index) * 0.08;
         node.scale.setScalar(scale);
       }
     });
@@ -1264,10 +2437,16 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
       const hitMesh = intersects[0].object;
       if (hoveredNode !== hitMesh) {
         if (hoveredNode) {
-          hoveredNode.material.color.setHex(statusColors[hoveredNode.userData.status] || statusColors.healthy);
+          hoveredNode.material.color.setHex(hoveredNode.userData.baseColor);
+          if (hoveredNode.userData.roomMesh) hoveredNode.userData.roomMesh.material.color.setHex(hoveredNode.userData.baseColor);
+          if (hoveredNode.userData.coreMesh) hoveredNode.userData.coreMesh.material.color.setHex(hoveredNode.userData.baseColor);
+          if (hoveredNode.userData.holoRingMesh) hoveredNode.userData.holoRingMesh.material.color.setHex(hoveredNode.userData.baseColor);
         }
         hoveredNode = hitMesh;
         hoveredNode.material.color.setHex(0xffffff); // Glow white on hover
+        if (hoveredNode.userData.roomMesh) hoveredNode.userData.roomMesh.material.color.setHex(0xffffff);
+        if (hoveredNode.userData.coreMesh) hoveredNode.userData.coreMesh.material.color.setHex(0xffffff);
+        if (hoveredNode.userData.holoRingMesh) hoveredNode.userData.holoRingMesh.material.color.setHex(0xffffff);
         if (typeof playCommandSound === 'function') {
           playCommandSound('confirm');
         }
@@ -1281,13 +2460,16 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
       const x = (tempV.x * 0.5 + 0.5) * rect.width;
       const y = (tempV.y * -0.5 + 0.5) * rect.height;
 
-      tooltip.innerHTML = `<strong>${esc(hoveredNode.userData.label)}</strong><span>Status: ${esc(hoveredNode.userData.status)}</span>`;
+      tooltip.innerHTML = `<strong>${esc(hoveredNode.userData.label)}</strong><div style="font-size: 10px; color: var(--cyan); margin-top: 2px;">Office: ${esc(hoveredNode.userData.roomName)}</div><span>Status: ${esc(hoveredNode.userData.status.toUpperCase())}</span>`;
       tooltip.style.left = `${x}px`;
       tooltip.style.top = `${y}px`;
       tooltip.style.display = 'block';
     } else {
       if (hoveredNode) {
-        hoveredNode.material.color.setHex(statusColors[hoveredNode.userData.status] || statusColors.healthy);
+        hoveredNode.material.color.setHex(hoveredNode.userData.baseColor);
+        if (hoveredNode.userData.roomMesh) hoveredNode.userData.roomMesh.material.color.setHex(hoveredNode.userData.baseColor);
+        if (hoveredNode.userData.coreMesh) hoveredNode.userData.coreMesh.material.color.setHex(hoveredNode.userData.baseColor);
+        if (hoveredNode.userData.holoRingMesh) hoveredNode.userData.holoRingMesh.material.color.setHex(hoveredNode.userData.baseColor);
         hoveredNode = null;
         tooltip.style.display = 'none';
       }
@@ -1304,6 +2486,7 @@ function initTeamAgentNetwork({ roles = [], roster = [], runningTasks = [], fail
     const nextHeight = Math.max(container.clientHeight, 260);
     teamNetworkCamera.aspect = nextWidth / nextHeight;
     teamNetworkCamera.updateProjectionMatrix();
+    teamNetworkCamera.lookAt(0, -10, 0);
     teamNetworkRenderer.setSize(nextWidth, nextHeight);
   };
   window.addEventListener('resize', teamNetworkResizeHandler);
@@ -1954,6 +3137,8 @@ async function loadDetails(force = false) {
     ['/api/platform-docs' + suffix, renderPlatform, 'platform-docs'],
     ['/api/architecture' + suffix, renderArchitecture, 'architecture-network'],
     ['/api/team-control' + suffix, renderTeamControl, 'team-control-room'],
+    ['/api/active-work' + suffix, renderActiveWork, 'active-work'],
+    ['/api/skill-registry' + suffix, renderSkillRegistry, 'skill-registry'],
     ['/api/agents' + suffix, renderAgents, 'configured-agents'],
     ['/api/active-sessions' + suffix, renderActiveSessions, 'active-sessions'],
     ['/api/active-tasks' + suffix, renderActiveTasks, 'active-tasks'],
@@ -2334,7 +3519,7 @@ async function triggerSummary() {
 }
 
 function init() {
-  ['codex-quota', 'gemma-quota', 'groq-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
+  ['codex-quota', 'gemma-quota', 'groq-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
   renderHarness({ overall: 'loading', deferred: true, checks: [] });
   if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = getPreferredVoice;
   $('sound-toggle')?.addEventListener('click', playIntroVoice);
