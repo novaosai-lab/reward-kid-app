@@ -5,11 +5,28 @@
     "name_en": "Application Support Lead",
     "category": "support",
     "description": "Incident, RCA, SLA risk, L3 troubleshooting, operational judgment.",
-    "triggers": ["incident", "RCA", "SLA", "ticket", "support", "alert"],
-    "outputs": ["triage", "risk summary", "RCA draft", "follow-up actions"],
+    "triggers": [
+      "incident",
+      "RCA",
+      "SLA",
+      "ticket",
+      "support",
+      "alert"
+    ],
+    "outputs": [
+      "triage",
+      "risk summary",
+      "RCA draft",
+      "follow-up actions"
+    ],
     "risk_level": "medium",
     "requires_approval": false,
-    "source_files": ["skills/support-engineering/SKILL.md", "skills/incident-manager/SKILL.md", "prompts/support-engineering-specialist.md", "prompts/incident-manager-specialist.md"],
+    "source_files": [
+      "skills/support-engineering/SKILL.md",
+      "skills/incident-manager/SKILL.md",
+      "prompts/support-engineering-specialist.md",
+      "prompts/incident-manager-specialist.md"
+    ],
     "status": "active"
   },
   {
@@ -18,11 +35,23 @@
     "name_en": "Discord Alert Intelligence",
     "category": "automation",
     "description": "Parse Discord order alerts, dedupe, categorize, sync Google Sheet dashboard, send short Google Chat link summaries.",
-    "triggers": ["prod-order-monitor", "Discord alert", "Google Sheet", "Google Chat"],
-    "outputs": ["Alerts sheet rows", "Summary dashboard", "Google Chat sheet link"],
+    "triggers": [
+      "prod-order-monitor",
+      "Discord alert",
+      "Google Sheet",
+      "Google Chat"
+    ],
+    "outputs": [
+      "Alerts sheet rows",
+      "Summary dashboard",
+      "Google Chat sheet link"
+    ],
     "risk_level": "medium",
     "requires_approval": false,
-    "source_files": ["discord-alert-forwarder/forward_prod_order_alerts.py", "discord-alert-forwarder/google_sheet_writer.py"],
+    "source_files": [
+      "discord-alert-forwarder/forward_prod_order_alerts.py",
+      "discord-alert-forwarder/google_sheet_writer.py"
+    ],
     "status": "active"
   },
   {
@@ -31,11 +60,25 @@
     "name_en": "OpenClaw Operations",
     "category": "ops",
     "description": "Gateway, channels, cron jobs, launch agents, health checks, status verification.",
-    "triggers": ["openclaw", "gateway", "cron", "channel", "status"],
-    "outputs": ["health report", "fix recommendation", "safe restart"],
+    "triggers": [
+      "openclaw",
+      "gateway",
+      "cron",
+      "channel",
+      "status"
+    ],
+    "outputs": [
+      "health report",
+      "fix recommendation",
+      "safe restart"
+    ],
     "risk_level": "medium",
     "requires_approval": true,
-    "source_files": ["prompts/sre-specialist.md", "prompts/devops-specialist.md", "TOOLS.md"],
+    "source_files": [
+      "prompts/sre-specialist.md",
+      "prompts/devops-specialist.md",
+      "TOOLS.md"
+    ],
     "status": "active"
   },
   {
@@ -44,11 +87,25 @@
     "name_en": "Automation & n8n",
     "category": "automation",
     "description": "Design and harden n8n workflows for Google Sheets, Google Chat, OpenClaw, schedules, and webhooks.",
-    "triggers": ["n8n", "workflow", "Google Chat", "Google Sheets", "webhook"],
-    "outputs": ["workflow JSON", "import checklist", "security notes"],
+    "triggers": [
+      "n8n",
+      "workflow",
+      "Google Chat",
+      "Google Sheets",
+      "webhook"
+    ],
+    "outputs": [
+      "workflow JSON",
+      "import checklist",
+      "security notes"
+    ],
     "risk_level": "medium",
     "requires_approval": true,
-    "source_files": ["skills/n8n-openclaw-automation/SKILL.md", "skills/n8n-orchestration-pattern/SKILL.md", "playbooks/openclaw-n8n-webhook-boundary-checklist.md"],
+    "source_files": [
+      "skills/n8n-openclaw-automation/SKILL.md",
+      "skills/n8n-orchestration-pattern/SKILL.md",
+      "playbooks/openclaw-n8n-webhook-boundary-checklist.md"
+    ],
     "status": "active"
   },
   {
@@ -57,11 +114,25 @@
     "name_en": "Investment Research",
     "category": "research",
     "description": "SCB/Thai stock and fund research briefs with research-only guardrails.",
-    "triggers": ["SCB", "ลงทุน", "fund", "หุ้น", "brief"],
-    "outputs": ["morning brief", "evening brief", "BUY_ON_DCA/WAIT/AVOID_FOR_NOW research verdict"],
+    "triggers": [
+      "SCB",
+      "ลงทุน",
+      "fund",
+      "หุ้น",
+      "brief"
+    ],
+    "outputs": [
+      "morning brief",
+      "evening brief",
+      "BUY_ON_DCA/WAIT/AVOID_FOR_NOW research verdict"
+    ],
     "risk_level": "high",
-    "requires_approval": false,
-    "source_files": ["skills/portfolio-manager/SKILL.md", "skills/us-stock-analysis/SKILL.md", "skills/trader-memory-core/SKILL.md"],
+    "requires_approval": true,
+    "source_files": [
+      "skills/portfolio-manager/SKILL.md",
+      "skills/us-stock-analysis/SKILL.md",
+      "skills/trader-memory-core/SKILL.md"
+    ],
     "status": "active"
   },
   {
@@ -70,11 +141,24 @@
     "name_en": "Second Brain",
     "category": "knowledge",
     "description": "Local memory/repo knowledge indexing, search, and static dashboard.",
-    "triggers": ["memory", "ค้น", "second brain", "knowledge"],
-    "outputs": ["search results", "dashboard", "citations"],
+    "triggers": [
+      "memory",
+      "ค้น",
+      "second brain",
+      "knowledge"
+    ],
+    "outputs": [
+      "search results",
+      "dashboard",
+      "citations"
+    ],
     "risk_level": "low",
     "requires_approval": false,
-    "source_files": ["knowledge-wiki/wiki/index.md", "knowledge-wiki/wiki/log.md", "nova-skill-os/nova_skill_os.py"],
+    "source_files": [
+      "knowledge-wiki/wiki/index.md",
+      "knowledge-wiki/wiki/log.md",
+      "nova-skill-os/nova_skill_os.py"
+    ],
     "status": "active"
   },
   {
@@ -83,11 +167,26 @@
     "name_en": "Mobile / Web Testing",
     "category": "qa",
     "description": "Emulator, adb, screenshots, web testing, QA/release risk checks.",
-    "triggers": ["apk", "emulator", "adb", "test", "QA", "release"],
-    "outputs": ["test evidence", "bug notes", "release risk"],
+    "triggers": [
+      "apk",
+      "emulator",
+      "adb",
+      "test",
+      "QA",
+      "release"
+    ],
+    "outputs": [
+      "test evidence",
+      "bug notes",
+      "release risk"
+    ],
     "risk_level": "medium",
     "requires_approval": false,
-    "source_files": ["skills/mobile-app-testing/SKILL.md", "skills/webapp-testing/SKILL.md", "prompts/qa-specialist.md"],
+    "source_files": [
+      "skills/mobile-app-testing/SKILL.md",
+      "skills/webapp-testing/SKILL.md",
+      "prompts/qa-specialist.md"
+    ],
     "status": "active"
   },
   {
@@ -96,11 +195,25 @@
     "name_en": "Content & Reporting",
     "category": "reporting",
     "description": "Executive summaries, Google Slides, support reports, readable Thai digests.",
-    "triggers": ["summary", "slides", "report", "digest", "executive"],
-    "outputs": ["Thai summary", "slide draft", "executive report"],
+    "triggers": [
+      "summary",
+      "slides",
+      "report",
+      "digest",
+      "executive"
+    ],
+    "outputs": [
+      "Thai summary",
+      "slide draft",
+      "executive report"
+    ],
     "risk_level": "low",
     "requires_approval": false,
-    "source_files": ["skills/support-reporting/SKILL.md", "skills/support-report-to-slides/SKILL.md", "skills/morning-briefing/SKILL.md"],
+    "source_files": [
+      "skills/support-reporting/SKILL.md",
+      "skills/support-report-to-slides/SKILL.md",
+      "skills/morning-briefing/SKILL.md"
+    ],
     "status": "active"
   },
   {
@@ -109,11 +222,52 @@
     "name_en": "Repo Reader Cheap",
     "category": "research",
     "description": "Low-cost read-only first-pass public repo review using sanitized repo packs and a strict no-private-data boundary.",
-    "triggers": ["public repo", "อ่าน repo", "cheap subagent", "free LLM", "repo review"],
-    "outputs": ["repo summary", "adapt/watch/skip verdict", "risk notes", "Nova adaptation recommendation"],
+    "triggers": [
+      "public repo",
+      "อ่าน repo",
+      "cheap subagent",
+      "free LLM",
+      "repo review"
+    ],
+    "outputs": [
+      "repo summary",
+      "adapt/watch/skip verdict",
+      "risk notes",
+      "Nova adaptation recommendation"
+    ],
     "risk_level": "low",
     "requires_approval": false,
-    "source_files": ["prompts/repo-reader-cheap-specialist.md", "bin/nova-cheap-repo-reader", "research/free-llm-provider-allowlist.md", "bin/nova-pack-repo"],
+    "source_files": [
+      "prompts/repo-reader-cheap-specialist.md",
+      "bin/nova-cheap-repo-reader",
+      "research/free-llm-provider-allowlist.md",
+      "bin/nova-pack-repo"
+    ],
     "status": "draft"
+  },
+  {
+    "id": "gateguard",
+    "name_th": "GateGuard",
+    "name_en": "GateGuard",
+    "category": "safety",
+    "description": "Fact-forcing pre-edit investigation gate — DENY/FORCE/ALLOW before Edit/Write/Bash.",
+    "triggers": [
+      "edit",
+      "write",
+      "bash",
+      "rm",
+      "delete",
+      "force"
+    ],
+    "outputs": [
+      "investigation facts",
+      "gate pass/deny"
+    ],
+    "risk_level": "medium",
+    "requires_approval": false,
+    "source_files": [
+      "skills/gateguard/SKILL.md"
+    ],
+    "status": "active"
   }
 ]

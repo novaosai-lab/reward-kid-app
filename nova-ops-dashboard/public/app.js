@@ -2,6 +2,9 @@ const $ = id => document.getElementById(id);
 window.dashboardState = {
   isAgentRunning: false
 };
+const APP_BASE_PATH = window.location.pathname === '/novaops' || window.location.pathname.startsWith('/novaops/')
+  ? '/novaops'
+  : '';
 const label = s => s === 'healthy' ? 'Healthy' : s === 'critical' ? 'Critical' : s === 'warning' ? 'Warning' : s === 'loading' ? 'Loading' : 'Unknown';
 const esc = x => String(x ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const pill = s => `<span class="pill ${s}">${label(s)}</span>`;
@@ -17,8 +20,14 @@ function setHtml(id, html) {
   if (el) el.innerHTML = html;
 }
 
+function apiUrl(url) {
+  return APP_BASE_PATH && typeof url === 'string' && url.startsWith('/api/')
+    ? `${APP_BASE_PATH}${url}`
+    : url;
+}
+
 async function getJson(url) {
-  const res = await fetch(url);
+  const res = await fetch(apiUrl(url));
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -461,6 +470,37 @@ function renderGemmaQuota(data) {
       + '</article>';
   }).join('');
   setHtml('gemma-quota', note + (items || '<p class="muted">No Gemma provider configured.</p>'));
+}
+
+function renderMinimaxQuota(data) {
+  const note = data.note ? '<p class="quota-note">' + esc(data.note) + '</p>' : '';
+  const items = (data.items || []).map(item => {
+    const statusPill = pill(item.status).replace(label(item.status), esc(item.statusLabel || label(item.status)));
+    const latest = item.latestCallAt ? new Date(item.latestCallAt).toLocaleString() : 'No local MiniMax call found';
+    const realtime = item.realtimeLimit || {};
+    const realtimeAt = realtime.generatedAt ? new Date(realtime.generatedAt).toLocaleTimeString() : 'Unavailable';
+    const expires = item.tokenExpiresAt ? new Date(item.tokenExpiresAt).toLocaleString() : 'Expiry unknown';
+    const aliases = (item.aliases || []).join(' · ');
+    const models = item.models || {};
+    const sample = (models.sample || []).length ? '<div class="quota-meta"><span>Models: ' + esc(models.sample.join(' · ')) + '</span></div>' : '';
+    return '<article class="quota-item">'
+      + '<div class="quota-head"><div><strong>' + esc(item.provider || 'MiniMax Token Plan') + '</strong><span>' + esc(item.accountId || 'minimax-portal:default') + '</span></div>' + statusPill + '</div>'
+      + '<div class="quota-limit"><span>Realtime token-plan quota</span><strong>' + esc(item.limitLabel || 'Unavailable') + '</strong><em>Updated ' + esc(realtimeAt) + '</em></div>'
+      + '<div class="quota-windows">'
+      + renderQuotaWindow(realtime.primary?.label || '5h Token Plan', realtime.primary, 'MiniMax quota shape not returned', item.configured ? 'Unavailable' : 'OAuth required')
+      + renderQuotaWindow(realtime.secondary?.label || 'Weekly Token Plan', realtime.secondary, 'MiniMax weekly quota shape not returned', item.configured ? 'Unavailable' : 'OAuth required')
+      + '</div>'
+      + '<div class="quota-grid">'
+      + '<div><span>Plan</span><strong>' + esc(item.plan || 'Unknown') + '</strong></div>'
+      + '<div><span>24h calls</span><strong>' + esc(item.usage24h?.calls || 0) + '</strong></div>'
+      + '<div><span>7d calls</span><strong>' + esc(item.usage7d?.calls || 0) + '</strong></div>'
+      + '<div><span>7d failed</span><strong>' + esc(item.usage7d?.failed || 0) + '</strong></div>'
+      + '</div>'
+      + '<div class="quota-meta"><span>OAuth: ' + esc(item.configured ? 'connected' : 'missing') + '</span><span>Expires: ' + esc(expires) + '</span><span>Aliases: ' + esc(aliases || 'n/a') + '</span><span>Latest: ' + esc(latest) + '</span></div>'
+      + sample
+      + '</article>';
+  }).join('');
+  setHtml('minimax-quota', note + (items || '<p class="muted">No MiniMax provider configured.</p>'));
 }
 
 function renderTokenSessions(data) {
@@ -1469,7 +1509,7 @@ function renderTeamControl(data) {
         appendTerminalLine(`Triggering ${actionName}...`, 'loading');
         
         try {
-          const res = await fetch(apiPath);
+          const res = await fetch(apiUrl(apiPath));
           const resData = await res.json();
           if (resData.ok || resData.status === 'healthy' || resData.hasOwnProperty('overall')) {
             appendTerminalLine(`${actionName} successful!`, 'success');
@@ -1506,7 +1546,7 @@ function renderTeamControl(data) {
   async function executeVerification() {
     appendTerminalLine('Executing task verification gate...', 'loading');
     try {
-      const res = await fetch('/api/run-verification');
+      const res = await fetch(apiUrl('/api/run-verification'));
       const resData = await res.json();
       if (resData.ok) {
         appendTerminalLine(`Verification Passed: ${resData.taskId}`, 'success');
@@ -1560,7 +1600,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'status') {
           appendTerminalLine('Probing gateway telemetry...', 'loading');
           try {
-            const res = await fetch('/api/status');
+            const res = await fetch(apiUrl('/api/status'));
             const statusData = await res.json();
             appendTerminalLine(`Status: [${statusData.overall.toUpperCase()}]`, statusData.overall === 'healthy' ? 'success' : 'warn');
             (statusData.services || []).forEach(s => {
@@ -1616,7 +1656,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'token') {
           appendTerminalLine('Triggering token/context attribution...', 'loading');
           try {
-            const res = await fetch('/api/run-token-attribution');
+            const res = await fetch(apiUrl('/api/run-token-attribution'));
             const resData = await res.json();
             appendTerminalLine(resData.ok ? 'Token attribution complete.' : `Token attribution failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
             if (typeof load === 'function') load(true);
@@ -1626,7 +1666,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'quality') {
           appendTerminalLine('Triggering final quality gate...', 'loading');
           try {
-            const res = await fetch('/api/run-quality-review');
+            const res = await fetch(apiUrl('/api/run-quality-review'));
             const resData = await res.json();
             appendTerminalLine(resData.ok ? 'Quality gate complete.' : `Quality gate failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
             if (typeof load === 'function') load(true);
@@ -1636,7 +1676,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'design') {
           appendTerminalLine('Triggering UI design quality gate...', 'loading');
           try {
-            const res = await fetch('/api/run-ui-design-audit');
+            const res = await fetch(apiUrl('/api/run-ui-design-audit'));
             const resData = await res.json();
             appendTerminalLine(resData.ok ? `Design gate complete: ${resData.report?.readiness || 'captured'} score=${resData.report?.score ?? 'n/a'}` : `Design gate failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
             if (typeof load === 'function') load(true);
@@ -1652,7 +1692,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'watch') {
           appendTerminalLine('Triggering local scheduled watch...', 'loading');
           try {
-            const res = await fetch('/api/run-watch');
+            const res = await fetch(apiUrl('/api/run-watch'));
             const resData = await res.json();
             appendTerminalLine(resData.ok ? 'Watch complete.' : `Watch failed: ${resData.error || 'unknown'}`, resData.ok ? 'success' : 'error');
             if (typeof load === 'function') load(true);
@@ -1671,7 +1711,7 @@ function renderTeamControl(data) {
         } else if (cmd === 'logs') {
           appendTerminalLine('Fetching guard watchdog logs...', 'loading');
           try {
-            const res = await fetch('/api/status');
+            const res = await fetch(apiUrl('/api/status'));
             const resData = await res.json();
             const logs = resData.guard?.recent || [];
             if (logs.length === 0) {
@@ -3124,6 +3164,7 @@ async function loadDetails(force = false) {
     ['/api/codex-quota' + suffix, renderCodexQuota, 'codex-quota'],
     ['/api/gemma-quota' + suffix, renderGemmaQuota, 'gemma-quota'],
     ['/api/groq-quota' + suffix, renderGroqQuota, 'groq-quota'],
+    ['/api/minimax-quota' + suffix, renderMinimaxQuota, 'minimax-quota'],
     ['/api/token-sessions' + suffix, renderTokenSessions, 'token-sessions'],
     ['/api/context-budget' + suffix, renderContextBudget, 'context-budget'],
     ['/api/telegram-health' + suffix, renderTelegramHealth, 'telegram-health'],
@@ -3494,7 +3535,7 @@ async function triggerSummary() {
   playCommandSound('tap');
 
   try {
-    const res = await fetch('/api/trigger-summary');
+    const res = await fetch(apiUrl('/api/trigger-summary'));
     const data = await res.json();
     if (data.ok) {
       status.textContent = 'Turn summarized successfully! Telegram and daily note updated.';
@@ -3519,7 +3560,7 @@ async function triggerSummary() {
 }
 
 function init() {
-  ['codex-quota', 'gemma-quota', 'groq-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
+  ['codex-quota', 'gemma-quota', 'groq-quota', 'minimax-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
   renderHarness({ overall: 'loading', deferred: true, checks: [] });
   if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = getPreferredVoice;
   $('sound-toggle')?.addEventListener('click', playIntroVoice);

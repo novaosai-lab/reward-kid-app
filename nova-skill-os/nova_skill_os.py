@@ -378,6 +378,241 @@ def tool_loop_guard_report(json_out: bool = False) -> None:
     print('\nPolicy: stop blind retries; change strategy or ask one concise question when blocked.')
 
 
+# ── Context Budget ──────────────────────────────────────────────────────────────
+
+def context_budget_report(json_out: bool = False) -> None:
+    """Report Nova workspace context overhead — adapted from ECC context-budget skill.
+
+    Phase 1: Inventory key loaded-component directories.
+    Phase 2: Estimate token overhead per category.
+    Phase 3: Flag bloat, heavy files, and redundant components.
+    Phase 4: Report total estimated overhead vs MiniMax M3 context window.
+    """
+    CHARS_PER_TOKEN = 4  # English average; Thai averages ~3 but conservative estimate
+    # MiniMax M3 context window ≈ 32K–128K tokens; use 128K as ceiling reference
+    M3_CONTEXT = 128_000
+
+    root = Path(__file__).parent.parent  # workspace root
+    findings: list[dict] = []
+    total_tokens = 0
+
+    # ── Bootstrap files (always loaded in main session) ──────────────────────
+    bootstrap_map = {
+        'SOUL.md':          200,
+        'USER.md':          200,
+        'MEMORY.md':       1000,
+        'TOOLS.md':         800,
+        'AGENTS.md':        500,
+        'IDENTITY.md':      200,
+        'HEARTBEAT.md':     200,
+        'MEMORY_HOT.md':    400,
+    }
+    bootstrap_total = 0
+    for name, threshold in bootstrap_map.items():
+        path = root / name
+        if not path.exists():
+            continue
+        size = path.stat().st_size
+        tokens = size // CHARS_PER_TOKEN
+        bootstrap_total += tokens
+        if tokens > threshold:
+            findings.append({
+                'severity': 'WARN',
+                'category': 'bootstrap',
+                'file': name,
+                'tokens': tokens,
+                'threshold': threshold,
+                'message': f'{name}: ~{tokens:,} tokens (>{threshold:,} threshold)',
+                'action': f'consider trimming or archiving old content'
+            })
+        else:
+            findings.append({
+                'severity': 'OK',
+                'category': 'bootstrap',
+                'file': name,
+                'tokens': tokens,
+                'threshold': threshold,
+                'message': f'{name}: ~{tokens:,} tokens',
+                'action': None
+            })
+    total_tokens += bootstrap_total
+
+    # ── Skills (SKILL.md files) — loaded when skill is invoked ───────────────
+    skills_dir = root / 'skills'
+    skills_total = 0
+    skills_files = 0
+    if skills_dir.is_dir():
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.exists():
+                continue
+            size = skill_md.stat().st_size
+            tokens = size // CHARS_PER_TOKEN
+            skills_total += tokens
+            skills_files += 1
+            if tokens > 400:
+                findings.append({
+                    'severity': 'WARN',
+                    'category': 'skills',
+                    'file': str(skill_md.relative_to(root)),
+                    'tokens': tokens,
+                    'threshold': 400,
+                    'message': f'skills/{skill_dir.name}: ~{tokens:,} tokens (>400 threshold)',
+                    'action': 'consider reducing SKILL.md to essentials or splitting into sub-files'
+                })
+    total_tokens += skills_total
+
+    # ── Prompts (specialist .md files) — loaded when agent spawns ──────────
+    prompts_dir = root / 'prompts'
+    prompts_total = 0
+    prompts_files = 0
+    if prompts_dir.is_dir():
+        for prompt_md in sorted(prompts_dir.glob('*.md')):
+            size = prompt_md.stat().st_size
+            tokens = size // CHARS_PER_TOKEN
+            prompts_total += tokens
+            prompts_files += 1
+            if tokens > 200:
+                findings.append({
+                    'severity': 'WARN',
+                    'category': 'prompts',
+                    'file': str(prompt_md.relative_to(root)),
+                    'tokens': tokens,
+                    'threshold': 200,
+                    'message': f'prompts/{prompt_md.name}: ~{tokens:,} tokens (>200 threshold)',
+                    'action': 'consider shortening specialist prompt to core instructions only'
+                })
+    total_tokens += prompts_total
+
+    # ── Playbooks (.md files) — loaded on demand ────────────────────────────
+    playbooks_dir = root / 'playbooks'
+    playbooks_total = 0
+    playbooks_files = 0
+    if playbooks_dir.is_dir():
+        for pb in sorted(playbooks_dir.glob('*.md')):
+            size = pb.stat().st_size
+            tokens = size // CHARS_PER_TOKEN
+            playbooks_total += tokens
+            playbooks_files += 1
+            if tokens > 300:
+                findings.append({
+                    'severity': 'WARN',
+                    'category': 'playbooks',
+                    'file': str(pb.relative_to(root)),
+                    'tokens': tokens,
+                    'threshold': 300,
+                    'message': f'playbooks/{pb.name}: ~{tokens:,} tokens (>300 threshold)',
+                    'action': 'consider archiving or trimming playbook'
+                })
+    total_tokens += playbooks_total
+
+    # ── Recent memory files (last 14 days) — loaded in main session ─────────
+    memory_dir = root / 'memory'
+    memory_total = 0
+    memory_files = 0
+    import time, datetime
+    cutoff = time.time() - 14 * 86400  # 14 days
+    if memory_dir.is_dir():
+        for mf in sorted(memory_dir.glob('*.md'), reverse=True):
+            if mf.stat().st_mtime < cutoff:
+                break  # stop after first old file (files are sorted by name≈date)
+            size = mf.stat().st_size
+            tokens = size // CHARS_PER_TOKEN
+            memory_total += tokens
+            memory_files += 1
+            if tokens > 2000:
+                findings.append({
+                    'severity': 'WARN',
+                    'category': 'memory',
+                    'file': str(mf.relative_to(root)),
+                    'tokens': tokens,
+                    'threshold': 2000,
+                    'message': f'{mf.name}: ~{tokens:,} tokens (>2,000 threshold)',
+                    'action': 'consider archiving or trimming daily memory file'
+                })
+    total_tokens += memory_total
+
+    # ── Research (recent 30 days) — loaded on demand ────────────────────────
+    # NOTE: only scan research/ top-level .md files, NOT external/ or deep subdirs
+    # (external repos live under external/ and are not in-session unless explicitly loaded)
+    research_dir = root / 'research'
+    research_total = 0
+    research_files = 0
+    research_cutoff = time.time() - 30 * 86400
+    if research_dir.is_dir():
+        for rf in sorted(research_dir.glob('*.md'), reverse=True):
+            if rf.stat().st_mtime < research_cutoff:
+                break
+            size = rf.stat().st_size
+            tokens = size // CHARS_PER_TOKEN
+            research_total += tokens
+            research_files += 1
+            if tokens > 500:
+                findings.append({
+                    'severity': 'INFO',
+                    'category': 'research',
+                    'file': str(rf.relative_to(root)),
+                    'tokens': tokens,
+                    'threshold': 500,
+                    'message': f'{rf.name}: ~{tokens:,} tokens (>500 — large research artifact)',
+                    'action': 'consider whether this belongs in memory/ or can be archived'
+                })
+    total_tokens += research_total
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    pct = total_tokens / M3_CONTEXT * 100
+    warns = [f for f in findings if f['severity'] in ('WARN', 'INFO')]
+
+    if json_out:
+        import json as _json
+        print(_json.dumps({
+            'total_tokens': total_tokens,
+            'context_ceiling': M3_CONTEXT,
+            'pct_used': round(pct, 1),
+            'categories': {
+                'bootstrap': {'tokens': bootstrap_total, 'files': 8},
+                'skills':    {'tokens': skills_total,    'files': skills_files},
+                'prompts':   {'tokens': prompts_total,   'files': prompts_files},
+                'playbooks': {'tokens': playbooks_total, 'files': playbooks_files},
+                'memory':    {'tokens': memory_total,    'files': memory_files},
+                'research':  {'tokens': research_total,  'files': research_files},
+            },
+            'findings': findings,
+        }, indent=2))
+        return
+
+    print('══════════════════════════════════════════')
+    print('  Nova Context Budget Report')
+    print('  (workspace scan — report-only)')
+    print('══════════════════════════════════════════')
+    print()
+    print(f'  MiniMax M3 ceiling:  ~{M3_CONTEXT:,} tokens')
+    print(f'  Total estimated:     ~{total_tokens:,} tokens  ({pct:.1f}% of ceiling)')
+    print()
+    print('  Breakdown')
+    print(f'  ├─ bootstrap (always-loaded)  ~{bootstrap_total:>7,} tokens  (8 files)')
+    print(f'  ├─ skills (on-demand)         ~{skills_total:>7,} tokens  ({skills_files} SKILL.md files)')
+    print(f'  ├─ prompts (agent spawn)       ~{prompts_total:>7,} tokens  ({prompts_files} specialist files)')
+    print(f'  ├─ playbooks (on-demand)      ~{playbooks_total:>7,} tokens  ({playbooks_files} playbooks)')
+    print(f'  ├─ memory (last 14 days)      ~{memory_total:>7,} tokens  ({memory_files} files)')
+    print(f'  └─ research (last 30 days)    ~{research_total:>7,} tokens  ({research_files} artifacts)')
+    print()
+    if warns:
+        print(f'  ⚠ Issues ({len(warns)} flagged)')
+        for f in warns:
+            print(f'  [{f["severity"]}] {f["message"]}')
+            if f['action']:
+                print(f'        → {f["action"]}')
+    else:
+        print('  ✅ No bloat flags. Context overhead is within safe thresholds.')
+    print()
+    print('  Policy: keep bootstrap <5% of context; prefer report-only artifacts')
+    print('          for large content; lazy-load skills/prompts on demand.')
+    print()
+
+
 def _artifact_paths(argv: list[str]) -> list[Path]:
     return [Path(arg).expanduser() for arg in argv[2:] if not arg.startswith('--')]
 
@@ -774,13 +1009,15 @@ def main(argv: list[str]) -> int:
         memory_fencing_report('--json' in argv)
     elif cmd in {'tool-loop-guard', '/tool-loop-guard'}:
         tool_loop_guard_report('--json' in argv)
+    elif cmd in {'context-budget', '/context-budget'}:
+        context_budget_report('--json' in argv)
     elif cmd in {'artifact-verifier', '/artifact-verifier'}:
         artifact_verifier_report(argv, '--json' in argv)
     elif cmd in {'plugin-intake-check', '/plugin-intake-check'}:
         path_args = [x for x in argv[2:] if not x.startswith('--')]
         plugin_intake_check(path_args[0] if path_args else None, '--json' in argv)
     else:
-        print('Commands: skills | skill-lifecycle | skill-profiles | wiki-status | improvement-report | cron-safety | memory-fencing | tool-loop-guard | artifact-verifier | plugin-intake-check | alert-dashboard | alert-summary | openclaw-health')
+        print('Commands: skills | skill-lifecycle | skill-profiles | wiki-status | improvement-report | cron-safety | memory-fencing | tool-loop-guard | context-budget | artifact-verifier | plugin-intake-check | alert-dashboard | alert-summary | openclaw-health')
     return 0
 
 

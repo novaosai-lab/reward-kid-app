@@ -10,6 +10,7 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const WORKSPACE = '/Users/nova/.openclaw/workspace';
 const PORT = Number(process.env.NOVA_OPS_PORT || 18888);
+const BASE_PATH = '/novaops';
 const OPENCLAW = '/opt/homebrew/bin/openclaw';
 const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
 const SUPPORT_DIGEST_EXPORT = path.join(WORKSPACE, 'grafana-dashboards', 'export_support_digest_data.py');
@@ -60,6 +61,14 @@ const CODEX_APP_SERVER_BIN = '/Applications/Codex.app/Contents/Resources/codex';
 const GEMMA_AUTH_PROFILE = 'google:aistudio-gemma';
 const GEMMA_MODEL_ID = 'google/gemma-4-31b-it';
 const GEMMA_API_MODEL = 'gemma-4-31b-it';
+const MINIMAX_AUTH_PROFILE = 'minimax-portal:default';
+const MINIMAX_PROVIDER_ID = 'minimax-portal';
+const MINIMAX_USAGE_PATH = '/v1/token_plan/remains';
+const MINIMAX_MODELS = [
+  'minimax-portal/MiniMax-M3',
+  'minimax-portal/MiniMax-M2.7',
+  'minimax-portal/MiniMax-M2.7-highspeed',
+];
 const GRAFANA_PROJECTS = [
   {
     id: 'grafana_amaze',
@@ -302,6 +311,7 @@ const TTL = {
   codexQuota: 30000,
   gemmaQuota: 30000,
   groqQuota: 30000,
+  minimaxQuota: 30000,
   tokenSessions: 30000,
   contextBudget: 30000,
   jobRuns: 30000,
@@ -1950,6 +1960,215 @@ function requestJson(url, headers = {}, timeoutMs = 10000) {
   });
 }
 
+function parseMaybeEpoch(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value < 1000000000000 ? value * 1000 : value).toISOString();
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function pickFirst(record, keys) {
+  if (!record || typeof record !== 'object') return undefined;
+  for (const key of keys) {
+    if (record[key] != null && record[key] !== '') return record[key];
+  }
+}
+
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function clampPercent(value) {
+  const n = finiteNumber(value);
+  if (n == null) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
+function compactCount(n) {
+  const val = Number(n || 0);
+  if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+  if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+  return String(Math.round(val));
+}
+
+function minimaxUsageWindowFromPayload(payload) {
+  const totalKeys = ['total', 'total_amount', 'totalAmount', 'total_tokens', 'totalTokens', 'total_quota', 'totalQuota', 'current_interval_total_count', 'currentIntervalTotalCount', 'current_weekly_total_count', 'currentWeeklyTotalCount', 'limit', 'quota', 'quota_limit', 'quotaLimit', 'max'];
+  const usedKeys = ['used', 'usage', 'used_amount', 'usedAmount', 'used_tokens', 'usedTokens', 'used_quota', 'usedQuota', 'current_interval_usage_count', 'currentIntervalUsageCount', 'current_weekly_usage_count', 'currentWeeklyUsageCount', 'consumed'];
+  const remainingKeys = ['remain', 'remaining', 'remain_amount', 'remainingAmount', 'remaining_amount', 'remain_tokens', 'remainingTokens', 'remaining_tokens', 'remain_quota', 'remainingQuota', 'remaining_quota', 'left'];
+  const usedPercentKeys = ['used_percent', 'usedPercent', 'used_rate', 'usage_rate', 'used_ratio', 'usage_ratio', 'usedRatio', 'usageRatio'];
+  const remainingPercentKeys = ['usage_percent', 'usagePercent', 'current_interval_remaining_percent', 'currentIntervalRemainingPercent', 'current_weekly_remaining_percent', 'currentWeeklyRemainingPercent'];
+  const resetKeys = ['reset_at', 'resetAt', 'reset_time', 'resetTime', 'next_reset_at', 'nextResetAt', 'next_reset_time', 'nextResetTime', 'expires_at', 'expiresAt', 'expire_at', 'expireAt', 'end_time', 'endTime', 'window_end', 'windowEnd'];
+
+  const total = finiteNumber(pickFirst(payload, totalKeys));
+  let used = finiteNumber(pickFirst(payload, usedKeys));
+  const remaining = finiteNumber(pickFirst(payload, remainingKeys));
+  if (used == null && total != null && remaining != null) used = Math.max(0, total - remaining);
+
+  let usedPercent = total && used != null ? clampPercent((used / total) * 100) : null;
+  if (usedPercent == null) {
+    const raw = finiteNumber(pickFirst(payload, usedPercentKeys));
+    if (raw != null) usedPercent = clampPercent(raw <= 1 ? raw * 100 : raw);
+  }
+  if (usedPercent == null) {
+    const rawRemaining = finiteNumber(pickFirst(payload, remainingPercentKeys));
+    if (rawRemaining != null) usedPercent = clampPercent(100 - clampPercent(rawRemaining <= 1 ? rawRemaining * 100 : rawRemaining));
+  }
+
+  const label = String(payload.window_hours || payload.windowHours || payload.duration_hours || payload.durationHours || '').trim()
+    ? String(payload.window_hours || payload.windowHours || payload.duration_hours || payload.durationHours) + 'h'
+    : '5h Token Plan';
+
+  return {
+    label,
+    usedPercent,
+    remainingPercent: usedPercent == null ? null : Math.max(0, 100 - usedPercent),
+    used,
+    limit: total,
+    resetsAt: parseMaybeEpoch(pickFirst(payload, resetKeys)),
+  };
+}
+
+function pickMinimaxUsageRecord(data) {
+  const root = data?.data && typeof data.data === 'object' ? data.data : data;
+  const remains = Array.isArray(root?.model_remains) ? root.model_remains : [];
+  const chat = remains.find(item => {
+    const name = String(item?.model_name || '');
+    const total = finiteNumber(item?.current_interval_total_count);
+    return name.toLowerCase().startsWith('minimax-m') && total && total > 0;
+  });
+  return chat || remains.find(item => String(item?.model_name || '').toLowerCase() === 'general') || remains[0] || root || {};
+}
+
+function minimaxWeeklyWindowFromPayload(payload) {
+  const total = finiteNumber(payload?.current_weekly_total_count ?? payload?.currentWeeklyTotalCount);
+  const used = finiteNumber(payload?.current_weekly_usage_count ?? payload?.currentWeeklyUsageCount);
+  const remainingPercent = finiteNumber(payload?.current_weekly_remaining_percent ?? payload?.currentWeeklyRemainingPercent);
+  let usedPercent = total && used != null ? clampPercent((used / total) * 100) : null;
+  if (usedPercent == null && remainingPercent != null) usedPercent = clampPercent(100 - clampPercent(remainingPercent));
+  return {
+    label: 'Weekly Token Plan',
+    usedPercent,
+    remainingPercent: usedPercent == null ? null : Math.max(0, 100 - usedPercent),
+    used,
+    limit: total,
+    resetsAt: parseMaybeEpoch(payload?.weekly_end_time ?? payload?.weeklyEndTime),
+  };
+}
+
+function emptyMinimaxUsage(configured = false) {
+  return {
+    provider: 'MiniMax Token Plan',
+    accountId: MINIMAX_AUTH_PROFILE,
+    configured,
+    status: configured ? 'healthy' : 'warning',
+    statusLabel: configured ? 'OAuth profile configured' : 'Missing OAuth profile',
+    plan: 'Unknown',
+    limitLabel: configured ? 'Token Plan quota probe pending' : 'MiniMax OAuth unavailable',
+    limitKnown: false,
+    tokenExpiresAt: '',
+    realtimeLimit: { generatedAt: '', primary: null, secondary: null },
+    usage24h: { calls: 0, completed: 0, failed: 0 },
+    usage7d: { calls: 0, completed: 0, failed: 0 },
+    latestCallAt: '',
+    models: { reachable: configured, active: MINIMAX_MODELS.length, sample: MINIMAX_MODELS },
+    aliases: ['minimax-m3', 'minimax-m2.7', 'minimax-m2.7-highspeed'],
+    evidence: 'MiniMax token-plan remains API + OpenClaw OAuth profile + local session logs',
+  };
+}
+
+async function collectMinimaxQuota() {
+  const now = Date.now();
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const authProfiles = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
+  const profile = authProfiles?.profiles?.[MINIMAX_AUTH_PROFILE];
+  const accessToken = String(profile?.access || profile?.token || profile?.key || '').trim();
+  const item = emptyMinimaxUsage(Boolean(accessToken));
+  const notes = [];
+
+  item.tokenExpiresAt = parseMaybeEpoch(profile?.expires) || '';
+  if (profile && profile.provider !== MINIMAX_PROVIDER_ID) {
+    item.status = 'warning';
+    item.statusLabel = 'Profile provider mismatch';
+    notes.push('MiniMax auth profile exists, but provider is ' + String(profile.provider || 'unknown') + '.');
+  }
+
+  if (accessToken) {
+    try {
+      const baseUrl = String(config?.models?.providers?.[MINIMAX_PROVIDER_ID]?.baseUrl || 'https://api.minimax.io/anthropic/v1');
+      const origin = new URL(baseUrl).origin;
+      const probe = await requestJson(origin + MINIMAX_USAGE_PATH, {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+        'MM-API-Source': 'NovaOpsDashboard',
+        'User-Agent': 'NovaOpsDashboard/1.0',
+      }, 12000);
+      const baseResp = probe.data?.base_resp;
+      if (baseResp && Number(baseResp.status_code || 0) !== 0) {
+        throw new Error(String(baseResp.status_msg || 'MiniMax API error'));
+      }
+      const record = pickMinimaxUsageRecord(probe.data);
+      const window = minimaxUsageWindowFromPayload(record);
+      const weeklyWindow = minimaxWeeklyWindowFromPayload(record);
+      const plan = String(record.plan || record.plan_name || record.planName || record.product || record.tier || '').trim();
+      const modelName = String(record.model_name || '').trim();
+      item.plan = plan || (modelName && modelName !== 'general' ? 'Token Plan · ' + modelName : 'Plus');
+      item.realtimeLimit.primary = window.usedPercent == null ? null : window;
+      item.realtimeLimit.secondary = weeklyWindow.usedPercent == null ? null : weeklyWindow;
+      item.realtimeLimit.generatedAt = new Date().toISOString();
+      item.limitKnown = window.usedPercent != null;
+      item.status = window.usedPercent == null ? 'warning' : window.usedPercent >= 90 ? 'critical' : window.usedPercent >= 75 ? 'warning' : 'healthy';
+      item.statusLabel = window.usedPercent == null ? 'Quota shape unknown' : 'Quota reachable';
+      item.limitLabel = window.usedPercent == null
+        ? 'Quota response shape not recognized'
+        : Math.round(window.usedPercent) + '% used · ' + Math.round(Math.max(0, 100 - window.usedPercent)) + '% left';
+      if (window.used != null && window.limit != null && window.limit > 0) {
+        item.limitLabel += ' · ' + compactCount(window.used) + '/' + compactCount(window.limit);
+      }
+    } catch (e) {
+      item.status = 'critical';
+      item.statusLabel = 'Quota probe failed';
+      item.limitLabel = 'MiniMax quota probe failed';
+      notes.push('MiniMax quota probe failed: ' + (e?.message || String(e)));
+    }
+  }
+
+  let files = [];
+  try { files = await fsp.readdir(OPENCLAW_SESSIONS_DIR); } catch {}
+  for (const file of files.filter(name => name.endsWith('.jsonl'))) {
+    const filePath = path.join(OPENCLAW_SESSIONS_DIR, file);
+    let text = '';
+    try { text = await fsp.readFile(filePath, 'utf8'); } catch { continue; }
+    if (!/minimax-portal|MiniMax-M|minimax-m/i.test(text)) continue;
+    for (const line of text.split('\n')) {
+      if (!/minimax-portal|MiniMax-M|minimax-m/i.test(line)) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      const ts = parseEventTimestamp(event.timestamp || event.ts || event.message?.timestamp || '');
+      if (!Number.isFinite(ts)) continue;
+      if (!item.latestCallAt || ts > Date.parse(item.latestCallAt)) item.latestCallAt = new Date(ts).toISOString();
+      for (const bucket of [ts >= dayAgo ? item.usage24h : null, ts >= weekAgo ? item.usage7d : null].filter(Boolean)) {
+        bucket.calls += 1;
+        if (String(event.type || '').toLowerCase().includes('error')) bucket.failed += 1;
+        else bucket.completed += 1;
+      }
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'minimax-token-plan-remains-api + openclaw-auth-profile + local-session-logs',
+    note: notes.length
+      ? notes.join(' ')
+      : 'MiniMax quota is read from the Token Plan remains API through the OpenClaw OAuth profile. Access tokens are kept redacted; the card shows only plan, expiry, quota window, and local Nova usage.',
+    items: [item],
+  };
+}
+
 async function collectGroqQuota() {
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
@@ -2410,6 +2629,14 @@ function send(res, code, type, body) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === BASE_PATH) {
+    res.writeHead(302, { Location: `${BASE_PATH}/` });
+    res.end();
+    return;
+  }
+  if (url.pathname.startsWith(`${BASE_PATH}/`)) {
+    url.pathname = url.pathname.slice(BASE_PATH.length) || '/';
+  }
   if (url.pathname === '/api/ping') {
     send(res, 200, 'application/json', JSON.stringify({ ok: true, service: 'nova-ops-dashboard', generatedAt: new Date().toISOString() }));
     return;
@@ -2486,6 +2713,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/gemma-quota') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('gemma-quota', TTL.gemmaQuota, collectGemmaQuota, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
+    return;
+  }
+  if (url.pathname === '/api/minimax-quota') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('minimax-quota', TTL.minimaxQuota, collectMinimaxQuota, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
     return;
   }
