@@ -142,6 +142,22 @@ def check_policy():
     return Check('policy.admin_actions', 'pass' if admin_disabled else 'warn', 'dashboard admin actions disabled' if admin_disabled else 'admin action state unclear')
 
 
+def check_agentskills_publish_dryrun():
+    t=time.time()
+    cmd = [str(WS/'nova-skill-os/agentskills_publisher.py'), '--all', '--dry-run', '--format', 'text']
+    ok, out, ms = run(cmd, timeout=30)
+    if not ok:
+        return Check('agentskills.publish_dryrun', 'fail', out[-500:], ms)
+    # count "written" / "skipped" / "error" lines
+    written = sum(1 for ln in out.splitlines() if '[written]' in ln)
+    skipped = sum(1 for ln in out.splitlines() if '[skipped]' in ln)
+    errors = sum(1 for ln in out.splitlines() if '[error]' in ln)
+    detail = f"all dry-run: written_or_skipped={written + skipped}, errors={errors}"
+    if errors > 0:
+        return Check('agentskills.publish_dryrun', 'fail', detail, ms)
+    return Check('agentskills.publish_dryrun', 'pass', detail, ms)
+
+
 def check_skill_lifecycle_report():
     t=time.time()
     cmd = [str(WS/'nova-skill-os/nova_skill_os.py'), 'skill-lifecycle']
@@ -385,7 +401,7 @@ def check_action_guard():
 CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
-    check_skill_lifecycle_report, check_skill_profiles_manifest, check_cron_safety_report, check_memory_fencing_report, check_tool_loop_guard_report, check_plugin_intake_report, check_artifact_verifier_report, check_improvement_loop, check_sheets_schema_contract,
+    check_agentskills_publish_dryrun, check_skill_lifecycle_report, check_skill_profiles_manifest, check_cron_safety_report, check_memory_fencing_report, check_tool_loop_guard_report, check_plugin_intake_report, check_artifact_verifier_report, check_improvement_loop, check_sheets_schema_contract,
     check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety, check_context_guard, check_action_guard
 ]
 

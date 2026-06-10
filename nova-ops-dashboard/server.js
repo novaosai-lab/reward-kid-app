@@ -25,6 +25,7 @@ const TELEGRAM_BRIDGE_LOG = path.join(WORKSPACE, 'logs', 'telegram-bridge.out.lo
 const N8N_DIR = path.join(WORKSPACE, 'n8n');
 const OPENCLAW_CONFIG_JSON = '/Users/nova/.openclaw/openclaw.json';
 const OPENCLAW_AUTH_PROFILES_JSON = '/Users/nova/.openclaw/agents/main/agent/auth-profiles.json';
+const OPENCLAW_AGENT_SQLITE = '/Users/nova/.openclaw/agents/main/agent/openclaw-agent.sqlite';
 const OPENCLAW_SESSIONS_DIR = '/Users/nova/.openclaw/agents/main/sessions';
 const NOVA_CONTEXT_SLIMMER = path.join(WORKSPACE, 'bin', 'nova-context-slimmer');
 const NOVA_HOT_MEMORY = path.join(WORKSPACE, 'bin', 'nova-hot-memory');
@@ -524,6 +525,45 @@ async function readJsonFile(file) {
   } catch {
     return null;
   }
+}
+
+// Newer OpenClaw versions (2026.5+) migrate the auth profile store into the
+// agent SQLite database. When the legacy auth-profiles.json disappears we
+// transparently read the same shape back from `auth_profile_store` so that
+// quota cards keep showing the real OAuth profile.
+let sqliteReaderPromise = null;
+function readAuthProfilesFromSqliteSync() {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch {
+    return null;
+  }
+  let db;
+  try {
+    db = new DatabaseSync(OPENCLAW_AGENT_SQLITE, { readOnly: true });
+    const row = db.prepare("SELECT store_json FROM auth_profile_store WHERE store_key = 'primary'").get();
+    if (!row || !row.store_json) return null;
+    const parsed = JSON.parse(row.store_json);
+    if (!parsed || typeof parsed !== 'object' || !parsed.profiles) return null;
+    return { profiles: parsed.profiles };
+  } catch (e) {
+    console.warn('[nova-ops] readAuthProfilesFromSqlite failed:', e?.message || e);
+    return null;
+  } finally {
+    try { db?.close(); } catch {}
+  }
+}
+
+async function readAuthProfiles() {
+  const json = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  if (json && json.profiles && Object.keys(json.profiles).length) return json;
+  try {
+    if (!sqliteReaderPromise) sqliteReaderPromise = Promise.resolve();
+    const fromSqlite = await sqliteReaderPromise.then(readAuthProfilesFromSqliteSync);
+    if (fromSqlite) return fromSqlite;
+  } catch {}
+  return { profiles: {} };
 }
 
 function parseJsonOutput(output) {
@@ -2083,7 +2123,7 @@ async function collectMinimaxQuota() {
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const authProfiles = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  const authProfiles = await readAuthProfiles();
   const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
   const profile = authProfiles?.profiles?.[MINIMAX_AUTH_PROFILE];
   const accessToken = String(profile?.access || profile?.token || profile?.key || '').trim();
@@ -2295,7 +2335,7 @@ async function collectGemmaQuota() {
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const minuteAgo = now - 60 * 1000;
-  const authProfiles = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  const authProfiles = await readAuthProfiles();
   const profile = authProfiles?.profiles?.[GEMMA_AUTH_PROFILE];
   const apiKey = String(profile?.key || '').trim();
   const item = emptyGemmaUsage(Boolean(apiKey));
@@ -2398,7 +2438,7 @@ async function collectCodexQuota() {
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const config = await readJsonFile(OPENCLAW_CONFIG_JSON);
-  const authProfiles = await readJsonFile(OPENCLAW_AUTH_PROFILES_JSON);
+  const authProfiles = await readAuthProfiles();
   const profiles = { ...(config?.auth?.profiles || {}), ...(authProfiles?.profiles || {}) };
   const configuredAccountIds = new Set(Object.keys(profiles));
   const accountDefs = CODEX_ACCOUNT_DEFS.map(account => ({
