@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""Run a cheap/read-only public repo review through an approved low-cost provider.
+
+Guardrails:
+- Public GitHub URLs only.
+- Repo must pass nova-cheap-repo-reader / nova-pack-repo.
+- Refuses quarantined *.unsafe packs.
+- Sends only the generated pack + cheap specialist prompt to the provider.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+WORKSPACE = Path('/Users/nova/.openclaw/workspace')
+PREP = WORKSPACE / 'bin/nova-cheap-repo-reader'
+PROMPT = WORKSPACE / 'prompts/repo-reader-cheap-specialist.md'
+REVIEWS = WORKSPACE / 'research/cheap-repo-reviews'
+GROQ_KEY_FILE = Path.home() / '.openclaw/secrets/cheap-repo-reader/groq-api-key.txt'
+DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant'
+DEFAULT_GROQ_MAX_PACK_CHARS = 60000
+
+# Minimax (Anthropic Messages-compatible). Access token is read from the
+# OpenClaw agent SQLite store (auth_profile_store) so it stays in sync with
+# `openclaw channels login` / token rotation. SQLite path mirrors the one used
+# by nova-ops-dashboard for auth profiles.
+OPENCLAW_AGENT_SQLITE = Path('/Users/nova/.openclaw/agents/main/agent/openclaw-agent.sqlite')
+MINIMAX_API_BASE = 'https://api.minimax.io/anthropic/v1'
+MINIMAX_API_VERSION = '2023-06-01'
+DEFAULT_MINIMAX_MODEL = 'MiniMax-M2.7-highspeed'
+DEFAULT_MINIMAX_MAX_PACK_CHARS = 120000
+DEFAULT_MAXIMAX_MAX_OUTPUT_TOKENS = 4000
+
+# Provider defaults: minimax is now the primary cheap lane (larger context, no
+# 6k TPM rate limit like Groq free). Groq remains as an opt-in fallback.
+PROVIDER_DEFAULTS = {
+    'minimax': {
+        'model': DEFAULT_MINIMAX_MODEL,
+        'max_pack_chars': DEFAULT_MINIMAX_MAX_PACK_CHARS,
+        'max_output_tokens': DEFAULT_MAXIMAX_MAX_OUTPUT_TOKENS,
+    },
+    'groq': {
+        'model': DEFAULT_GROQ_MODEL,
+        'max_pack_chars': DEFAULT_GROQ_MAX_PACK_CHARS,
+        'max_output_tokens': 1200,
+    },
+}
+
+
+def run(cmd: list[str], timeout: int = 1200) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        cwd=str(WORKSPACE),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+    )
+
+
+def slug(value: str) -> str:
+    return re.sub(r'[^A-Za-z0-9._-]+', '-', value).strip('-') or 'repo'
+
+
+def read_secret(path: Path) -> str:
+    if not path.exists():
+        raise SystemExit(f'[blocked] missing secret file: {path}')
+    token = path.read_text(encoding='utf-8').strip()
+    if not token:
+        raise SystemExit(f'[blocked] empty secret file: {path}')
+    return token
+
+
+def read_minimax_access_token() -> str:
+    """Read the current OAuth access token for the minimax-portal:default
+    auth profile from the OpenClaw agent SQLite store. Token is rotated by
+    `openclaw channels login`; reading fresh each call keeps us in sync."""
+    if not OPENCLAW_AGENT_SQLITE.exists():
+        raise SystemExit(
+            f'[blocked] OpenClaw agent SQLite not found: {OPENCLAW_AGENT_SQLITE}. '
+            f'Authenticate with `openclaw channels login` or restore the file.'
+        )
+    import sqlite3
+    try:
+        with sqlite3.connect(f'file:{OPENCLAW_AGENT_SQLITE}?mode=ro', uri=True) as db:
+            row = db.execute(
+                "SELECT store_json FROM auth_profile_store WHERE store_key='primary'"
+            ).fetchone()
+    except sqlite3.Error as e:
+        raise SystemExit(f'[blocked] could not read OpenClaw agent SQLite: {e}')
+    if not row or not row[0]:
+        raise SystemExit(
+            f'[blocked] auth_profile_store.primary is empty; run `openclaw channels login` '
+            f'to refresh the minimax-portal:default profile.'
+        )
+    try:
+        store = json.loads(row[0])
+        token = (store.get('profiles', {})
+                 .get('minimax-portal:default', {})
+                 .get('access', ''))
+    except (json.JSONDecodeError, AttributeError) as e:
+        raise SystemExit(f'[blocked] malformed auth_profile_store row: {e}')
+    if not token:
+        raise SystemExit(
+            f'[blocked] minimax-portal:default has no access token. '
+            f'Run `openclaw channels login` to refresh.'
+        )
+    return token.strip()
+
+
+def prepare_pack(url: str, compress: bool, include: str | None, ignore: list[str]) -> Path:
+    cmd = [str(PREP), 'prepare', url]
+    if compress:
+        cmd.append('--compress')
+    if include:
+        cmd += ['--include', include]
+    for item in ignore:
+        cmd += ['--ignore', item]
+    p = run(cmd)
+    sys.stderr.write(p.stdout)
+    if p.returncode != 0:
+        raise SystemExit('[blocked] repo preparation failed')
+    match = re.search(r'^PACK=(.+)$', p.stdout, re.M)
+    if not match:
+        raise SystemExit('[blocked] could not locate generated PACK path')
+    pack = Path(match.group(1).strip())
+    if not pack.is_absolute():
+        pack = WORKSPACE / pack
+    if str(pack).endswith('.unsafe') or not pack.exists():
+        raise SystemExit(f'[blocked] unsafe or missing pack: {pack}')
+    return pack
+
+
+def call_groq(api_key: str, model: str, prompt: str, pack_text: str, max_tokens: int) -> str:
+    url = 'https://api.groq.com/openai/v1/chat/completions'
+    body = {
+        'model': model,
+        'temperature': 0.2,
+        'max_tokens': max_tokens,
+        'messages': [
+            {
+                'role': 'system',
+                'content': 'You are a read-only public repository reviewer. Follow the requested output contract exactly. Do not request private data.',
+            },
+            {
+                'role': 'user',
+                'content': prompt + '\n\n--- SANITIZED REPO PACK ---\n\n' + pack_text,
+            },
+        ],
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'NovaCheapRepoReader/0.1 (+https://github.com/novaosai-lab/nova-agent-platform)',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        err = e.read().decode('utf-8', errors='replace')[:1000]
+        raise SystemExit(f'[provider_error] Groq HTTP {e.code}: {err}') from e
+    except urllib.error.URLError as e:
+        raise SystemExit(f'[provider_error] Groq request failed: {e.reason}') from e
+    return data['choices'][0]['message']['content'].strip()
+
+
+def call_minimax(access_token: str, model: str, prompt: str, pack_text: str, max_tokens: int) -> str:
+    """Call minimax-portal (Anthropic Messages-compatible) with `thinking`
+    disabled so the response is a single text block. Returns the assistant text."""
+    url = f'{MINIMAX_API_BASE}/messages'
+    body = {
+        'model': model,
+        'max_tokens': max_tokens,
+        'temperature': 0.2,
+        'thinking': {'type': 'disabled'},
+        'system': (
+            'You are a read-only public repository reviewer. '
+            'Follow the requested output contract exactly. Do not request private data.'
+        ),
+        'messages': [
+            {
+                'role': 'user',
+                'content': prompt + '\n\n--- SANITIZED REPO PACK ---\n\n' + pack_text,
+            }
+        ],
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+            'anthropic-version': MINIMAX_API_VERSION,
+            'User-Agent': 'NovaCheapRepoReader/0.2 (+https://github.com/novaosai-lab/nova-agent-platform)',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        err = e.read().decode('utf-8', errors='replace')[:1000]
+        raise SystemExit(f'[provider_error] minimax HTTP {e.code}: {err}') from e
+    except urllib.error.URLError as e:
+        raise SystemExit(f'[provider_error] minimax request failed: {e.reason}') from e
+    parts = []
+    for block in data.get('content', []):
+        if block.get('type') == 'text' and block.get('text'):
+            parts.append(block['text'])
+    if not parts:
+        raise SystemExit(
+            f'[provider_error] minimax returned no text blocks. '
+            f'stop_reason={data.get("stop_reason")!r} content_types='
+            f'{[b.get("type") for b in data.get("content", [])]!r}'
+        )
+    return '\n'.join(parts).strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description='Cheap/read-only public repo review runner.')
+    parser.add_argument('url', help='Plain public GitHub repo URL')
+    parser.add_argument('--provider', choices=['minimax', 'groq'], default='minimax')
+    parser.add_argument('--model', help='Override the default model for the selected provider')
+    parser.add_argument('--compress', action='store_true', default=True)
+    parser.add_argument('--max-pack-chars', type=int, help='Override the default pack char cap for the selected provider')
+    parser.add_argument('--max-output-tokens', type=int, help='Override the default max output tokens for the selected provider')
+    parser.add_argument('--include', help='Comma-separated include globs for narrow reviews')
+    parser.add_argument('--ignore', action='append', default=[], help='Extra comma-separated ignore globs. Can be repeated')
+    parser.add_argument('--dry-run', action='store_true', help='Prepare pack and show what would be sent, without provider call')
+    args = parser.parse_args()
+
+    pack = prepare_pack(args.url, compress=args.compress, include=args.include, ignore=args.ignore)
+    pack_text = pack.read_text(encoding='utf-8', errors='replace')
+    prompt = PROMPT.read_text(encoding='utf-8')
+
+    # Apply per-provider defaults when the user did not override them. This must
+    # happen before the truncation check so the right cap is used.
+    defaults = PROVIDER_DEFAULTS[args.provider]
+    model = args.model or defaults['model']
+    max_pack_chars = args.max_pack_chars if args.max_pack_chars is not None else defaults['max_pack_chars']
+    max_output_tokens = args.max_output_tokens if args.max_output_tokens is not None else defaults['max_output_tokens']
+
+    truncated = False
+    if len(pack_text) > max_pack_chars:
+        pack_text = pack_text[:max_pack_chars] + '\n\n[TRUNCATED_BY_NOVA_CHEAP_REPO_REVIEW]'
+        truncated = True
+
+    if args.dry_run:
+        print(json.dumps({
+            'ok': True,
+            'provider': args.provider,
+            'model': model,
+            'pack': str(pack),
+            'packChars': len(pack_text),
+            'truncated': truncated,
+            'maxPackChars': max_pack_chars,
+            'maxOutputTokens': max_output_tokens,
+            'include': args.include,
+            'ignore': args.ignore,
+            'wouldCallProvider': False,
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.provider == 'minimax':
+        access_token = read_minimax_access_token()
+        review = call_minimax(access_token, model, prompt, pack_text, max_output_tokens)
+    else:
+        api_key = read_secret(GROQ_KEY_FILE)
+        review = call_groq(api_key, model, prompt, pack_text, max_output_tokens)
+
+    REVIEWS.mkdir(parents=True, exist_ok=True)
+    out = REVIEWS / f'{slug(args.provider)}-{slug(model)}-{slug(args.url)}-{time.strftime("%Y%m%d-%H%M%S")}.md'
+    out.write_text(
+        f'# Cheap Repo Review\n\n'
+        f'- URL: {args.url}\n'
+        f'- Provider: {args.provider}\n'
+        f'- Model: {model}\n'
+        f'- Pack: {pack}\n'
+        f'- Pack truncated: {truncated}\n'
+        f'- Max pack chars: {max_pack_chars}\n'
+        f'- Max output tokens: {max_output_tokens}\n\n'
+        f'- Include: {args.include or ""}\n'
+        f'- Extra ignore: {", ".join(args.ignore)}\n\n'
+        f'---\n\n{review}\n',
+        encoding='utf-8',
+    )
+    print(out)
+    print()
+    print(review)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
