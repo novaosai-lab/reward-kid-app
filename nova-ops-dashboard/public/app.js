@@ -935,93 +935,6 @@ function renderTeamControl(data) {
   const uiAuditSummary = lastUiAuditRun.summary || {};
   const tokenTotal = tokenSummary.totalTokens || 0;
   const tokenPct = Math.max(4, Math.min(100, tokenTotal ? Math.round(tokenTotal / 10000) : 8));
-  const officeAgents = [
-    {
-      id: 'supervisor',
-      name: 'Supervisor',
-      role: 'Goal routing',
-      state: runtimeSummary.queued || runtimeSummary.assigned || runtimeSummary.handoff ? 'executing' : 'idle',
-      desk: 'Command Desk',
-      bubble: runtimeSummary.queued || runtimeSummary.assigned || runtimeSummary.handoff
-        ? `${runtimeSummary.queued || 0} queued / ${runtimeSummary.assigned || 0} assigned`
-        : 'Queue clear',
-      x: 15,
-      y: 30,
-    },
-    {
-      id: 'worker',
-      name: 'Worker',
-      role: 'Execution lane',
-      state: runtimeSummary.running || runningTasks.length ? 'executing' : 'idle',
-      desk: 'Build Bench',
-      bubble: runtimeSummary.running || runningTasks.length
-        ? `${runtimeSummary.running || runningTasks.length} running`
-        : 'Standing by',
-      x: 37,
-      y: 58,
-    },
-    {
-      id: 'reader',
-      name: 'Reader',
-      role: 'Context / file scan',
-      state: runtimeSummary.handoffs ? 'researching' : 'idle',
-      desk: 'Research Pod',
-      bubble: runtimeSummary.handoffs ? `${runtimeSummary.handoffs} handoffs mapped` : 'No handoff drift',
-      x: 58,
-      y: 36,
-    },
-    {
-      id: 'quality',
-      name: 'Quality',
-      role: 'QA / design gate',
-      state: (runtimeSummary.qualityReview || uiAuditSummary.findings) ? 'reviewing' : 'done',
-      desk: 'QA Station',
-      bubble: uiAuditSummary.findings
-        ? `${uiAuditSummary.findings} UI findings`
-        : `UI score ${lastUiAuditRun.score || 0}/100`,
-      x: 78,
-      y: 62,
-    },
-    {
-      id: 'permission',
-      name: 'Approval',
-      role: 'Human checkpoint',
-      state: runtimeSummary.needsApproval ? 'waiting' : 'done',
-      desk: 'Approval Gate',
-      bubble: runtimeSummary.needsApproval ? `${runtimeSummary.needsApproval} waiting` : 'No approvals blocked',
-      x: 48,
-      y: 18,
-    },
-  ];
-  const officeStateLabel = {
-    idle: 'Idle',
-    researching: 'Reading',
-    executing: 'Working',
-    reviewing: 'Review',
-    waiting: 'Waiting',
-    done: 'Done',
-  };
-  const officeAgentsHtml = officeAgents.map(agent => `
-    <article class="office-agent-desk ${esc(agent.state)}" style="--desk-x:${esc(agent.x)}%; --desk-y:${esc(agent.y)}%;">
-      <div class="office-agent-avatar" aria-hidden="true"><span></span></div>
-      <div class="office-agent-card">
-        <strong>${esc(agent.name)}</strong>
-        <span>${esc(agent.role)}</span>
-        <em>${esc(officeStateLabel[agent.state] || agent.state)}</em>
-      </div>
-      <div class="office-agent-bubble">${esc(agent.bubble)}</div>
-      <small>${esc(agent.desk)}</small>
-    </article>
-  `).join('');
-  const activeOfficeAgents = officeAgents.filter(agent => ['researching', 'executing', 'reviewing', 'waiting'].includes(agent.state)).length;
-  const visualOfficeFeed = [
-    runtimeSummary.lastScheduledWatch && `Watch ${runtimeSummary.lastScheduledWatch.watchId || 'latest'} · ${runtimeSummary.lastScheduledWatch.doctorReadiness || 'ready'}`,
-    runtimeSummary.lastQualityReview && `Quality ${runtimeSummary.lastQualityReview.taskId || 'latest'} · ${runtimeSummary.lastQualityReview.decision || 'captured'}`,
-    runtimeSummary.lastUiDesignAuditRun && `Design gate · ${runtimeSummary.lastUiDesignAuditRun.readiness || 'captured'} ${runtimeSummary.lastUiDesignAuditRun.score || 0}/100`,
-    runtimeSummary.lastTrustScoreRun && `Trust score · ${runtimeSummary.lastTrustScoreRun.readiness || 'trusted'} ${runtimeSummary.lastTrustScoreRun.score || 0}/100`,
-  ].filter(Boolean).slice(0, 5).map((line, index) => `
-    <div class="office-feed-line"><span>${String(index + 1).padStart(2, '0')}</span><code>${esc(line)}</code></div>
-  `).join('');
   const qualityEvents = [
     runtimeSummary.lastWorkerExecution && {
       title: 'Worker Execution',
@@ -1114,9 +1027,6 @@ function renderTeamControl(data) {
       <nav class="cockpit-subtabs" role="tablist">
         <button type="button" class="subtab-btn ${activeSubTab === 'orchestrator' ? 'active' : ''}" data-subtab="orchestrator" role="tab" aria-selected="${activeSubTab === 'orchestrator'}">
           <span class="subtab-icon">⌬</span> Orchestrator
-        </button>
-        <button type="button" class="subtab-btn ${activeSubTab === 'office' ? 'active' : ''}" data-subtab="office" role="tab" aria-selected="${activeSubTab === 'office'}">
-          <span class="subtab-icon">🏢</span> Visual Office
         </button>
         <button type="button" class="subtab-btn ${activeSubTab === 'workbench' ? 'active' : ''}" data-subtab="workbench" role="tab" aria-selected="${activeSubTab === 'workbench'}">
           <span class="subtab-icon">🖥️</span> Workbench
@@ -1226,47 +1136,6 @@ function renderTeamControl(data) {
         </section>
       </div>
 
-      <div id="subtab-office" class="subtab-content ${activeSubTab === 'office' ? 'active' : ''}">
-        <div class="visual-office-grid">
-          <section class="visual-office-stage-panel">
-            <div class="cockpit-panel-header">
-              <span>Nova Agent Office</span>
-              <a class="office-open-link" href="http://127.0.0.1:19000" target="_blank" rel="noreferrer">Open AI Town</a>
-            </div>
-            <div class="visual-office-stage" aria-label="Visual multi-agent office workspace">
-              <div class="office-room-floor"></div>
-              <div class="office-room-wall"></div>
-              <div class="office-zone office-zone-command">Command</div>
-              <div class="office-zone office-zone-build">Build</div>
-              <div class="office-zone office-zone-quality">Quality</div>
-              ${officeAgentsHtml}
-            </div>
-          </section>
-
-          <section class="visual-office-status-panel">
-            <div class="cockpit-panel-header"><span>Workspace State</span></div>
-            <div class="office-state-grid">
-              <div><span>Visual Mode</span><strong>Office v0.2</strong></div>
-              <div><span>Live Agents</span><strong>${esc(activeOfficeAgents)}/${esc(officeAgents.length)}</strong></div>
-              <div><span>Goals Done</span><strong>${esc(runtimeSummary.done || 0)}</strong></div>
-              <div><span>Approval Queue</span><strong>${esc(runtimeSummary.needsApproval || 0)}</strong></div>
-              <div><span>UI Gate</span><strong>${esc(lastUiAuditRun.score || 0)}/100</strong></div>
-              <div><span>Trust</span><strong>${esc(lastTrustRun.score || 0)}/100</strong></div>
-            </div>
-            <div class="office-status-legend">
-              ${Object.entries(officeStateLabel).map(([key, text]) => `<span class="office-state-pill ${esc(key)}">${esc(text)}</span>`).join('')}
-            </div>
-            <div class="office-feed">
-              <h3>Visual Timeline</h3>
-              ${visualOfficeFeed || '<p class="muted">No visual office events captured.</p>'}
-            </div>
-            <div class="cockpit-action-toolbar compact-toolbar">
-              <button type="button" id="cockpit-btn-open-office" class="cockpit-action primary">Open Agent Office</button>
-              <button type="button" id="cockpit-btn-office-watch" class="cockpit-action">Refresh State</button>
-            </div>
-          </section>
-        </div>
-      </div>
 
       <div id="subtab-workbench" class="subtab-content ${activeSubTab === 'workbench' ? 'active' : ''}">
         <div class="cockpit-hero-grid">
@@ -1655,7 +1524,6 @@ function renderTeamControl(data) {
           appendTerminalLine('  token    - Run token/context attribution', 'muted');
           appendTerminalLine('  quality  - Run final quality gate review', 'muted');
           appendTerminalLine('  design   - Run UI design quality gate', 'muted');
-          appendTerminalLine('  office   - Print visual office state and open target URL', 'muted');
           appendTerminalLine('  watch    - Run scheduled local watch', 'muted');
           appendTerminalLine('  logs     - Show recent watchdog log entries', 'muted');
           appendTerminalLine('  clear    - Clear console logs', 'muted');
@@ -1747,12 +1615,6 @@ function renderTeamControl(data) {
           } catch (err) {
             appendTerminalLine(`Design gate error: ${err.message}`, 'error');
           }
-        } else if (cmd === 'office') {
-          appendTerminalLine('Nova Agent Office v0.2:', 'info');
-          officeAgents.forEach(agent => {
-            appendTerminalLine(`  ${agent.name}: ${officeStateLabel[agent.state] || agent.state} · ${agent.bubble}`, agent.state === 'waiting' ? 'warn' : 'muted');
-          });
-          appendTerminalLine('  Local visual office: http://127.0.0.1:19000', 'muted');
         } else if (cmd === 'watch') {
           appendTerminalLine('Triggering local scheduled watch...', 'loading');
           try {
@@ -1797,8 +1659,6 @@ function renderTeamControl(data) {
 
   const btnLogs = document.getElementById('cockpit-btn-logs');
   const btnDeploy = document.getElementById('cockpit-btn-deploy');
-  const btnOpenOffice = document.getElementById('cockpit-btn-open-office');
-  const btnOfficeWatch = document.getElementById('cockpit-btn-office-watch');
 
   if (btnLogs) {
     btnLogs.addEventListener('click', () => {
@@ -1824,28 +1684,7 @@ function renderTeamControl(data) {
     });
   }
 
-  if (btnOpenOffice) {
-    btnOpenOffice.addEventListener('click', () => {
-      termInput?.focus();
-      appendTerminalLine('> office', 'command');
-      appendTerminalLine('Opening local visual office at http://127.0.0.1:19000', 'info');
-      window.open('http://127.0.0.1:19000', '_blank', 'noopener,noreferrer');
-    });
-  }
 
-  if (btnOfficeWatch) {
-    btnOfficeWatch.addEventListener('click', async () => {
-      termInput?.focus();
-      appendTerminalLine('Refreshing visual office state...', 'loading');
-      try {
-        await getJson('/api/team-control?refresh=1');
-        appendTerminalLine('Visual office state refreshed.', 'success');
-        if (typeof load === 'function') load(true);
-      } catch (err) {
-        appendTerminalLine(`Visual office refresh error: ${err.message}`, 'error');
-      }
-    });
-  }
 }
 
 let teamNetworkScene = null;
