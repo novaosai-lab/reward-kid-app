@@ -717,7 +717,9 @@ function renderTeamControl(data) {
     </article>
   `).join('');
 
-  const reportsHtml = reports.slice(0, 5).map(report => {
+  const visibleReports = reports.slice(0, 2);
+  const extraReports = reports.slice(2, 5);
+  const reportsHtml = visibleReports.map(report => {
     const reportPath = report.path || '';
     const reportFile = reportPath.split('/').pop() || reportPath || 'verification report';
     const generatedAt = report.generatedAt ? new Date(report.generatedAt).toLocaleString() : 'unknown time';
@@ -738,6 +740,33 @@ function renderTeamControl(data) {
       </article>
     `;
   }).join('');
+  const reportsToggleHtml = extraReports.length > 0 ? `
+    <button type="button" class="cockpit-toggle-btn" id="reports-toggle-btn" data-scope="reports">
+      Show ${extraReports.length} more report${extraReports.length > 1 ? 's' : ''} (${extraReports.length + visibleReports.length} total)
+    </button>
+    <div id="reports-extra" class="reports-extra" style="display:none">
+      ${extraReports.map(report => {
+        const reportPath = report.path || '';
+        const reportFile = reportPath.split('/').pop() || reportPath || 'verification report';
+        const generatedAt = report.generatedAt ? new Date(report.generatedAt).toLocaleString() : 'unknown time';
+        return `
+          <article class="verification-card">
+            <div class="verification-card-head">
+              <div class="verification-card-title">
+                <strong>${esc(report.taskId || reportFile)}</strong>
+                <span>${esc(report.summary || reportFile)}</span>
+              </div>
+              <span class="pill ${report.passed ? 'healthy' : 'critical'}">${report.passed ? 'PASSED' : 'NEEDS WORK'}</span>
+            </div>
+            <div class="verification-card-meta">
+              <span>${esc(generatedAt)}</span>
+              <span>Findings: ${esc(report.findings || 0)}</span>
+            </div>
+            <div class="verification-path" title="${esc(reportPath)}">${esc(reportFile)}</div>
+          </article>
+        `;
+      }).join('')}
+    </div>` : '';
 
   const runningHtml = runningTasks.map(task => `
     <article class="jobrun-item">
@@ -1197,6 +1226,7 @@ function renderTeamControl(data) {
             <h3>Recent Verification</h3>
             <div class="verification-list">
               ${reportsHtml || '<p class="muted">No verification reports found.</p>'}
+              ${reportsToggleHtml}
             </div>
           </section>
         </div>
@@ -1235,6 +1265,7 @@ function renderTeamControl(data) {
             <h3>Recent Verification Reports</h3>
             <div class="verification-list">
               ${reportsHtml || '<p class="muted">No verification reports found.</p>'}
+              ${reportsToggleHtml}
             </div>
           </section>
         </div>
@@ -1414,6 +1445,19 @@ function renderTeamControl(data) {
       handoffToggleBtn.textContent = isHidden ? `Hide extra handoffs` : `Show ${handoffExtra.children.length} more handoff${handoffExtra.children.length > 1 ? 's' : ''}`;
     });
   }
+
+  // Reports toggle: show/hide extra verification reports (handles multiple instances via class)
+  const allReportsToggles = document.querySelectorAll('[data-scope="reports"]');
+  allReportsToggles.forEach(btn => {
+    const extra = btn.nextElementSibling;
+    if (extra && extra.classList.contains('reports-extra')) {
+      btn.addEventListener('click', () => {
+        const isHidden = extra.style.display === 'none';
+        extra.style.display = isHidden ? 'block' : 'none';
+        btn.textContent = isHidden ? `Hide extra reports` : `Show ${extra.children.length} more report${extra.children.length > 1 ? 's' : ''}`;
+      });
+    }
+  });
 
   // Action Button Setup Helper
   function setupActionButton(btnId, apiPath, actionName, successCallback) {
