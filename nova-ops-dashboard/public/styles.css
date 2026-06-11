@@ -1422,6 +1422,40 @@ main {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* Collapsible section wrapper */
+.section-collapsible {
+  display: block;
+}
+
+.section-collapsible summary {
+  list-style: none;
+  -webkit-details-marker: none;
+  cursor: pointer;
+}
+
+.section-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Chevron indicator for collapsible */
+.section-collapsible summary::after {
+  content: '▾';
+  font-size: 12px;
+  color: var(--text-muted, #8b9cc8);
+  margin-left: 6px;
+  transition: transform 0.2s;
+}
+
+.section-collapsible[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.section-collapsible summary:hover .section-head h2,
+.section-collapsible summary:hover .section-head span {
+  color: var(--cyan, #00f0ff);
+  opacity: 0.9;
+}
+
 .section-head h2 {
   font-family: 'Orbitron', sans-serif;
   font-size: 14px;
@@ -4160,6 +4194,25 @@ body.focus-mode .holo-core-glow {
   border-color: rgba(255, 91, 54, 0.5);
   color: #ffb199;
   background: rgba(255, 91, 54, 0.1);
+}
+
+.cockpit-toggle-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 4px;
+  color: var(--text-muted, #8b9cc8);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.cockpit-toggle-btn:hover {
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--cyan, #00f0ff);
 }
 
 .cockpit-hero-grid {

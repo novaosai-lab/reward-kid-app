@@ -1,0 +1,162 @@
+{
+  "version": "2026.05.31",
+  "updatedAt": "2026-05-31T05:40:00Z",
+  "sections": [
+    {
+      "key": "openclaw",
+      "title": "OpenClaw",
+      "color": "#00f0ff",
+      "commands": [
+        {
+          "title": "Fast status",
+          "command": "openclaw status",
+          "description": "Quick health view for gateway, node, sessions, tasks, heartbeat, and channels.",
+          "tags": ["health", "status"]
+        },
+        {
+          "title": "Deep status",
+          "command": "openclaw status --deep",
+          "description": "Run deeper probes when channel or gateway behavior looks suspicious.",
+          "tags": ["health", "probe"]
+        },
+        {
+          "title": "Validate config",
+          "command": "openclaw config validate",
+          "description": "Check OpenClaw config syntax after editing agents, models, cron, or channels.",
+          "tags": ["config", "safe"]
+        },
+        {
+          "title": "Cron list",
+          "command": "openclaw cron list",
+          "description": "Review scheduled jobs, models, sessions, routes, and next run times.",
+          "tags": ["cron", "jobs"]
+        },
+        {
+          "title": "Skills check",
+          "command": "openclaw skills check",
+          "description": "Verify installed skills are eligible, visible to model, and callable as commands.",
+          "tags": ["skills", "quality"]
+        }
+      ]
+    },
+    {
+      "key": "grafana",
+      "title": "Grafana / Quickwit",
+      "color": "#22c55e",
+      "commands": [
+        {
+          "title": "Phoenix log query pattern",
+          "command": "(log:\"CPTH9016903885\") AND (event:\"PickedConfirmationUpdate\")",
+          "description": "Quickwit query pattern for order/event investigation through Grafana logging.",
+          "tags": ["quickwit", "logs", "support"]
+        },
+        {
+          "title": "Payload-only filter",
+          "command": "event:\"PickedConfirmationUpdate\" AND msg:\"{\\\"retailerId\"",
+          "description": "Find raw event payload lines where the structured msg starts with retailerId.",
+          "tags": ["logs", "payload"]
+        },
+        {
+          "title": "Grafana Phoenix env",
+          "command": "/Users/nova/.openclaw/workspace/grafana-openclaw-bridge/run-mcp-grafana-phoenix.sh",
+          "description": "Local MCP runner for Phoenix Grafana read-only access.",
+          "tags": ["mcp", "phoenix"]
+        }
+      ]
+    },
+    {
+      "key": "nova",
+      "title": "Nova Local Tools",
+      "color": "#8b8cff",
+      "commands": [
+        {
+          "title": "Token budget report",
+          "command": "bin/nova-token-budget-report --hours 5",
+          "description": "Find high-token main, channel, cron, or isolated sessions from local session logs.",
+          "tags": ["tokens", "quota"]
+        },
+        {
+          "title": "No-LLM session search",
+          "command": "bin/nova-session-search --query \"PickedConfirmationUpdate\" --hours 8 --limit 5",
+          "description": "Search local OpenClaw JSONL sessions without calling an LLM.",
+          "tags": ["search", "no-llm"]
+        },
+        {
+          "title": "Threat scan pasted text",
+          "command": "pbpaste | bin/nova-threat-scan --stdin",
+          "description": "Scan untrusted repo output, skill text, or pasted instructions for promptware risks.",
+          "tags": ["security", "promptware"]
+        },
+        {
+          "title": "Repo pack",
+          "command": "bin/nova-cheap-repo-reader prepare https://github.com/owner/repo",
+          "description": "Clone a public repo into the cheap reader lane and produce a sanitized pack.",
+          "tags": ["repo", "token-saving"]
+        }
+      ]
+    },
+    {
+      "key": "git",
+      "title": "Git",
+      "color": "#f97316",
+      "commands": [
+        {
+          "title": "Check worktree",
+          "command": "git status --short",
+          "description": "Compact check before editing or summarizing local changes.",
+          "tags": ["safe", "status"]
+        },
+        {
+          "title": "Latest commit",
+          "command": "git log -1 --date=iso --pretty='commit=%H%nauthor=%an%ndate=%ad%nsubject=%s'",
+          "description": "Capture exact repo revision when reviewing external references.",
+          "tags": ["review", "metadata"]
+        },
+        {
+          "title": "Safe fast-forward update",
+          "command": "git pull --ff-only",
+          "description": "Update a clean clone without merge commits.",
+          "tags": ["repo", "update"]
+        },
+        {
+          "title": "Discard local changes",
+          "command": "git reset --hard",
+          "description": "Destructive. Only run after explicit approval and after confirming no user work is present.",
+          "danger": true,
+          "tags": ["danger", "reset"]
+        }
+      ]
+    },
+    {
+      "key": "services",
+      "title": "Services",
+      "color": "#ffd000",
+      "commands": [
+        {
+          "title": "Dashboard status",
+          "command": "launchctl print gui/$(id -u)/ai.openclaw.nova-ops-dashboard",
+          "description": "Check whether Nova Ops Dashboard LaunchAgent is loaded and running.",
+          "tags": ["launchagent", "dashboard"]
+        },
+        {
+          "title": "Restart dashboard",
+          "command": "launchctl kickstart -k gui/$(id -u)/ai.openclaw.nova-ops-dashboard",
+          "description": "Restart the local dashboard after code changes.",
+          "tags": ["launchagent", "restart"]
+        },
+        {
+          "title": "n8n container",
+          "command": "docker ps --filter name=my-n8n --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+          "description": "Check local n8n runtime status.",
+          "tags": ["docker", "n8n"]
+        },
+        {
+          "title": "Follow guard log",
+          "command": "tail -f /Users/nova/.openclaw/workspace/logs/openclaw-guard.log",
+          "description": "Watch Guard Agent health checks and restart decisions.",
+          "tags": ["logs", "guard"]
+        }
+      ]
+    }
+  ]
+}

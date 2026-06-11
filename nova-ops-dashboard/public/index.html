@@ -335,19 +335,23 @@
         <div id="team-control-room" class="col-span-2"></div>
 
         <div class="card card-tech col-span-2 active-work-card" data-nova-id="active-work">
-          <div class="section-head">
-            <h2>Active Work Index</h2>
-            <span>Current focus · Project dossiers · Next safe step</span>
-          </div>
-          <div id="active-work" class="active-work-index"></div>
+          <details class="section-collapsible" id="active-work-details">
+            <summary class="section-head">
+              <h2>Active Work Index</h2>
+              <span>Current focus · Project dossiers · Next safe step</span>
+            </summary>
+            <div id="active-work" class="active-work-index"></div>
+          </details>
         </div>
 
         <div class="card card-tech col-span-2 skill-registry-card" data-nova-id="skill-registry">
-          <div class="section-head">
-            <h2>Nova Skill Registry</h2>
-            <span>Routing map · Eval flywheel · Skill governance</span>
-          </div>
-          <div id="skill-registry" class="skill-registry"></div>
+          <details class="section-collapsible" id="skill-registry-details">
+            <summary class="section-head">
+              <h2>Nova Skill Registry</h2>
+              <span>Routing map · Eval flywheel · Skill governance</span>
+            </summary>
+            <div id="skill-registry" class="skill-registry"></div>
+          </details>
         </div>
 
         <div class="card card-tech col-span-2 agents-submenu-card" data-nova-id="agents-secondary-menu">
@@ -608,7 +612,7 @@
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
 
-  <script src="app.js?v=1.7" defer></script>
+  <script src="app.js?v=1.8" defer></script>
 
   <!-- Interactive Command Center Scripts -->
   <script>

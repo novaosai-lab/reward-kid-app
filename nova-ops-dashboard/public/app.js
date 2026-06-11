@@ -884,7 +884,9 @@ function renderTeamControl(data) {
     .filter(task => task.status !== 'done')
     .slice(0, 4);
   const recentGoals = activeGoals.length ? activeGoals : queue.slice(0, 4);
-  const goalHtml = recentGoals.map(task => `
+  const visibleGoals = recentGoals.slice(0, 2);
+  const extraGoals = recentGoals.slice(2);
+  const goalHtml = visibleGoals.map(task => `
     <article class="goal-card">
       <div class="goal-card-head">
         <div>
@@ -901,6 +903,29 @@ function renderTeamControl(data) {
       </div>
     </article>
   `).join('');
+  const goalToggleHtml = extraGoals.length > 0 ? `
+    <button type="button" class="cockpit-toggle-btn" id="goal-toggle-btn">
+      Show ${extraGoals.length} more goal${extraGoals.length > 1 ? 's' : ''} (${extraGoals.length + visibleGoals.length} total)
+    </button>
+    <div id="goal-extra" style="display:none">
+      ${extraGoals.map(task => `
+        <article class="goal-card">
+          <div class="goal-card-head">
+            <div>
+              <strong>${esc(task.title || task.taskId)}</strong>
+              <span>${esc(task.taskId)} · ${esc(task.assignedRole || 'unassigned')}</span>
+            </div>
+            <span class="pill ${task.status === 'done' ? 'healthy' : task.status === 'blocked' ? 'critical' : 'warning'}">${esc(task.status || 'unknown')}</span>
+          </div>
+          <p>${esc(task.objective || 'No objective captured.')}</p>
+          <div class="goal-card-meta">
+            <span>Risk: ${esc(task.risk || 'local')}</span>
+            <span>Evidence: ${esc((task.evidence || []).length)}</span>
+            <span>QA: ${esc(task.qualityReviewDecision || 'pending')}</span>
+          </div>
+        </article>
+      `).join('')}
+    </div>` : '';
 
   const lastTokenRun = runtimeSummary.lastTokenAttributionRun || {};
   const tokenSummary = lastTokenRun.summary || {};
@@ -1039,13 +1064,28 @@ function renderTeamControl(data) {
     </article>
   `).join('');
 
-  const handoffHtml = handoffs.slice(0, 4).map(item => `
+  const visibleHandoffs = handoffs.slice(0, 2);
+  const extraHandoffs = handoffs.slice(2);
+  const handoffHtml = visibleHandoffs.map(item => `
     <article class="handoff-card">
       <strong>${esc(item.fromRole || 'orchestrator')} -> ${esc(item.toRole || 'worker')}</strong>
       <span>${esc(item.taskId || item.id)} · ${esc(item.risk || 'local')}</span>
       <p>${esc(item.objective || item.nextAction || 'No handoff detail captured.')}</p>
     </article>
   `).join('');
+  const handoffToggleHtml = extraHandoffs.length > 0 ? `
+    <button type="button" class="cockpit-toggle-btn" id="handoff-toggle-btn">
+      Show ${extraHandoffs.length} more handoff${extraHandoffs.length > 1 ? 's' : ''} (${extraHandoffs.length + visibleHandoffs.length} total)
+    </button>
+    <div id="handoff-extra" style="display:none">
+      ${extraHandoffs.map(item => `
+        <article class="handoff-card">
+          <strong>${esc(item.fromRole || 'orchestrator')} -> ${esc(item.toRole || 'worker')}</strong>
+          <span>${esc(item.taskId || item.id)} · ${esc(item.risk || 'local')}</span>
+          <p>${esc(item.objective || item.nextAction || 'No handoff detail captured.')}</p>
+        </article>
+      `).join('')}
+    </div>` : '';
 
   setHtml('team-control-room', `
     <div class="commander-cockpit" data-health="${esc(healthClass)}">
@@ -1109,6 +1149,7 @@ function renderTeamControl(data) {
               <div><span>Done</span><strong>${esc(runtimeSummary.done || 0)}</strong></div>
             </div>
             <div class="goal-list">${goalHtml || '<p class="muted">No goal queue entries captured.</p>'}</div>
+            ${goalToggleHtml}
           </section>
 
           <section class="orchestrator-panel">
@@ -1117,6 +1158,7 @@ function renderTeamControl(data) {
             <div class="handoff-stream">
               <h3>Latest Handoffs</h3>
               ${handoffHtml || '<p class="muted">No handoffs captured.</p>'}
+              ${handoffToggleHtml}
             </div>
           </section>
 
@@ -1481,6 +1523,28 @@ function renderTeamControl(data) {
       }, 50);
     });
   });
+
+  // Goal toggle: show/hide extra goals
+  const goalToggleBtn = document.getElementById('goal-toggle-btn');
+  const goalExtra = document.getElementById('goal-extra');
+  if (goalToggleBtn && goalExtra) {
+    goalToggleBtn.addEventListener('click', () => {
+      const isHidden = goalExtra.style.display === 'none';
+      goalExtra.style.display = isHidden ? 'block' : 'none';
+      goalToggleBtn.textContent = isHidden ? `Hide extra goals` : `Show ${goalExtra.children.length} more goal${goalExtra.children.length > 1 ? 's' : ''}`;
+    });
+  }
+
+  // Handoff toggle: show/hide extra handoffs
+  const handoffToggleBtn = document.getElementById('handoff-toggle-btn');
+  const handoffExtra = document.getElementById('handoff-extra');
+  if (handoffToggleBtn && handoffExtra) {
+    handoffToggleBtn.addEventListener('click', () => {
+      const isHidden = handoffExtra.style.display === 'none';
+      handoffExtra.style.display = isHidden ? 'block' : 'none';
+      handoffToggleBtn.textContent = isHidden ? `Hide extra handoffs` : `Show ${handoffExtra.children.length} more handoff${handoffExtra.children.length > 1 ? 's' : ''}`;
+    });
+  }
 
   // Action Button Setup Helper
   function setupActionButton(btnId, apiPath, actionName, successCallback) {
