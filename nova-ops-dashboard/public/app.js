@@ -255,10 +255,14 @@ function renderGrafana(grafana) {
 
 function renderWeb(web) {
   setHtml('web-inventory', (web.items || []).map(item => {
-    const ports = (item.ports || []).map(p => p.port + ': ' + (p.active ? 'on' : 'off')).join(' · ');
-    const links = [...(item.publicUrls || []), ...(item.localUrls || [])].map(u => '<code>' + esc(u) + '</code>').join('');
+    const ports = (item.ports || []).map(p => '<span class="' + (p.active ? 'ok' : 'bad') + '">' + esc(p.port) + ' ' + (p.active ? 'on' : 'off') + '</span>').join('');
+    const facts = [
+      ['Exposure', item.exposure],
+      ['Owner', item.owner]
+    ].map(([k, v]) => '<div><span>' + esc(k) + '</span><strong>' + esc(v || 'unknown') + '</strong></div>').join('');
+    const links = [...(item.publicUrls || []), ...(item.localUrls || [])].map(u => '<a href="' + esc(u) + '" target="_blank" rel="noreferrer"><code>' + esc(u) + '</code></a>').join('');
     const statusPill = pill(item.status).replace(label(item.status), esc(item.statusLabel || label(item.status)));
-    return '<article class="web-item"><div class="web-main"><span class="dot ' + esc(item.status) + '"></span><div><div class="web-title"><strong>' + esc(item.name) + '</strong>' + statusPill + '</div><p>' + esc(item.purpose) + '</p></div></div><div class="web-meta"><span>' + esc(item.exposure) + '</span><span>' + esc(item.owner) + '</span><span>' + esc(ports) + '</span></div><div class="web-links">' + links + '</div><div class="detail">' + esc(item.note) + '</div></article>';
+    return '<article class="web-item"><div class="web-main"><span class="dot ' + esc(item.status) + '"></span><div><div class="web-title"><strong>' + esc(item.name) + '</strong>' + statusPill + '</div><p>' + esc(item.purpose) + '</p></div></div><div class="web-body"><div class="web-facts">' + facts + '</div><div class="web-port-list"><span>Ports</span><div>' + (ports || '<span>none</span>') + '</div></div><div class="web-links">' + (links || '<span class="muted">No URLs configured.</span>') + '</div></div><div class="detail">' + esc(item.note) + '</div></article>';
   }).join('') || '<p class="muted">No web inventory configured.</p>');
 }
 
@@ -351,6 +355,145 @@ function renderJobRuns(data) {
   setHtml('job-runs', banner
     + '<div class="jobrun-columns"><section><h3>Jobs</h3>' + (jobs || '<p class="muted">No jobs surfaced.</p>') + '</section>'
     + '<section><h3>Recent Runs</h3>' + (runs || '<p class="muted">No run records surfaced.</p>') + '</section></div>');
+}
+
+function renderOpsLedger(data) {
+  const summary = data.summary || {};
+  const banner = '<div class="jobrun-summary ops-ledger-summary">'
+    + '<div><span>Tracked Jobs</span><strong>' + esc(summary.jobs || 0) + '</strong></div>'
+    + '<div><span>Healthy</span><strong>' + esc(summary.healthy || 0) + '</strong></div>'
+    + '<div><span>Needs Review</span><strong>' + esc(summary.needsReview || 0) + '</strong></div>'
+    + '<div><span>Mode</span><strong>' + esc(data.mode || 'read-only') + '</strong></div>'
+    + '</div>';
+
+  const guardrails = (data.guardrails || []).map(item => '<li>' + esc(item) + '</li>').join('');
+  const guardrailHtml = '<div class="ops-ledger-guardrails"><strong>Backfill guardrails</strong><ul>' + guardrails + '</ul></div>';
+
+  const jobs = (data.jobs || []).map(job => {
+    const statusPill = pill(job.status).replace(label(job.status), esc((job.status || 'unknown').toUpperCase()));
+    const last = job.lastEventAt ? new Date(job.lastEventAt).toLocaleString() : 'No local signal';
+    const age = ageLabel(job.ageMs);
+    const dryRun = job.backfillDryRunCommand || '';
+    const append = job.backfillAppendCommand || '';
+    return '<article class="ops-ledger-job">'
+      + '<div class="jobrun-head"><div><strong>' + esc(job.name) + '</strong><span>' + esc(job.source) + '</span></div>' + statusPill + '</div>'
+      + '<div class="ops-ledger-metrics">'
+      + '<div><span>Last event</span><strong>' + esc(last) + '</strong></div>'
+      + '<div><span>Age</span><strong>' + esc(age) + '</strong></div>'
+      + '<div><span>Last count</span><strong>' + esc(job.lastCount ?? 'n/a') + '</strong></div>'
+      + '<div><span>Watchdog recoveries</span><strong>' + esc(job.recoveryCount || 0) + '</strong></div>'
+      + '</div>'
+      + '<div class="detail">' + esc(job.risk || '') + '</div>'
+      + '<div class="ops-ledger-cursor"><span>Cursor</span><code>' + esc(job.lastCursor || 'not surfaced') + '</code></div>'
+      + '<details class="ops-command-block"><summary>Backfill commands</summary>'
+      + '<label>Dry run / review</label><code>' + esc(dryRun) + '</code>'
+      + '<label>Append to Google Sheet</label><code>' + esc(append) + '</code>'
+      + '</details>'
+      + '</article>';
+  }).join('');
+
+  const events = (data.events || []).map(event => {
+    const when = event.ts ? new Date(event.ts).toLocaleString() : 'time unknown';
+    return '<article class="ops-ledger-event">'
+      + '<span class="dot ' + esc(event.status || 'unknown') + '"></span>'
+      + '<div><strong>' + esc(event.source || 'event') + '</strong><p>' + esc(event.message || '') + '</p><small>' + esc(when) + (event.id ? ' · ' + esc(event.id) : '') + '</small></div>'
+      + '</article>';
+  }).join('');
+
+  setHtml('ops-ledger', banner + guardrailHtml
+    + '<div class="ops-ledger-grid"><section><h3>Backfill Control Center</h3>' + (jobs || '<p class="muted">No tracked jobs surfaced.</p>') + '</section>'
+    + '<section><h3>Event Ledger</h3>' + (events || '<p class="muted">No recent operational events surfaced.</p>') + '</section></div>');
+}
+
+function renderAlertQuality(data) {
+  const summary = data.summary || {};
+  const banner = '<div class="jobrun-summary alert-quality-summary">'
+    + '<div><span>Raw Alerts</span><strong>' + esc(summary.rawAlerts || 0) + '</strong></div>'
+    + '<div><span>Groups</span><strong>' + esc(summary.groups || 0) + '</strong></div>'
+    + '<div><span>Escalate</span><strong>' + esc(summary.escalate || 0) + '</strong></div>'
+    + '<div><span>Investigate</span><strong>' + esc(summary.investigate || 0) + '</strong></div>'
+    + '</div>';
+
+  const suggestions = (data.suggestions || []).map(item => '<li>' + esc(item) + '</li>').join('');
+  const guardrails = (data.guardrails || []).map(item => '<li>' + esc(item) + '</li>').join('');
+  const suggestionHtml = '<div class="alert-quality-guidance"><div><strong>Suggested rule work</strong><ul>' + suggestions + '</ul></div><div><strong>Guardrails</strong><ul>' + guardrails + '</ul></div></div>';
+
+  const actionLabel = action => String(action || 'watch').toUpperCase();
+  const groups = (data.groups || []).slice(0, 12).map(group => {
+    const statusPill = pill(group.status || 'unknown').replace(label(group.status || 'unknown'), esc(actionLabel(group.action)));
+    const codes = (group.httpCodes || []).join(', ') || 'n/a';
+    const tids = (group.tids || []).join(' · ') || 'n/a';
+    const last = group.lastSeenAt ? new Date(group.lastSeenAt).toLocaleString() : 'unknown';
+    return '<article class="alert-quality-group">'
+      + '<div class="jobrun-head"><div><strong>' + esc(group.title || group.signature) + '</strong><span>' + esc(group.endpoint || 'no endpoint') + '</span></div>' + statusPill + '</div>'
+      + '<div class="alert-quality-metrics">'
+      + '<div><span>Total</span><strong>' + esc(group.count || 0) + '</strong></div>'
+      + '<div><span>Last 6h</span><strong>' + esc(group.last6h || 0) + '</strong></div>'
+      + '<div><span>HTTP</span><strong>' + esc(codes) + '</strong></div>'
+      + '<div><span>Last seen</span><strong>' + esc(last) + '</strong></div>'
+      + '</div>'
+      + '<div class="detail">' + esc(group.reason || '') + '</div>'
+      + '<div class="alert-quality-meta"><span>Category: ' + esc(group.category || 'n/a') + '</span><span>Impact: ' + esc(group.impact || 'n/a') + '</span><span>TIDs: ' + esc(tids) + '</span></div>'
+      + '<div class="alert-quality-signature"><span>Signature</span><code>' + esc(group.signature || '') + '</code></div>'
+      + '</article>';
+  }).join('');
+
+  const endpoints = (data.endpointHotspots || []).map(item => '<article class="alert-quality-mini"><strong>' + esc(item.count) + '</strong><span>' + esc(item.endpoint) + '</span></article>').join('');
+  const categories = (data.categories || []).map(item => '<article class="alert-quality-mini"><strong>' + esc(item.count) + '</strong><span>' + esc(item.category) + '</span></article>').join('');
+  const coupon = (data.couponSignals || []).map(item => '<article class="alert-quality-group coupon-signal"><div class="jobrun-head"><div><strong>' + esc(item.title) + '</strong><span>' + esc(item.endpoint) + '</span></div>' + pill(item.status).replace(label(item.status), esc(actionLabel(item.action))) + '</div><div class="detail">' + esc(item.reason || '') + '</div><div class="alert-quality-meta"><span>matched: ' + esc(item.count || 0) + '</span><span>sheet rows: ' + esc(item.sheetRows || 0) + '</span></div></article>').join('');
+
+  setHtml('alert-quality', banner + suggestionHtml
+    + '<div class="alert-quality-grid"><section><h3>Top Alert Groups</h3>' + (groups || '<p class="muted">No grouped alerts surfaced.</p>') + '</section>'
+    + '<section><h3>Hotspots</h3><div class="alert-quality-mini-grid">' + (endpoints || '<p class="muted">No endpoint hotspots.</p>') + '</div><h3>Categories</h3><div class="alert-quality-mini-grid">' + (categories || '<p class="muted">No category counts.</p>') + '</div><h3>Coupon Rollup</h3>' + coupon + '</section></div>');
+}
+
+function renderLifeCommand(data) {
+  const summary = data.summary || {};
+  const brief = data.dailyBrief || {};
+  const banner = '<div class="jobrun-summary life-summary">'
+    + '<div><span>Open</span><strong>' + esc(summary.open || 0) + '</strong></div>'
+    + '<div><span>Tasks</span><strong>' + esc(summary.tasks || 0) + '</strong></div>'
+    + '<div><span>Reminders</span><strong>' + esc(summary.reminders || 0) + '</strong></div>'
+    + '<div><span>Due Soon</span><strong>' + esc(summary.dueSoon || 0) + '</strong></div>'
+    + '</div>';
+
+  const guardrails = (brief.guardrails || []).map(item => '<li>' + esc(item) + '</li>').join('');
+  const nextActions = (brief.nextActions || []).map(item => {
+    const due = item.dueAt ? new Date(item.dueAt).toLocaleString() : 'No due date';
+    return '<article class="life-item next-action">'
+      + '<div class="jobrun-head"><div><strong>' + esc(item.title || item.text) + '</strong><span>' + esc(item.type || 'task') + ' · ' + esc(item.channel || 'local') + '</span></div><span class="pill ' + (item.priority === 'P1' ? 'warning' : 'healthy') + '">' + esc(item.priority || 'P2') + '</span></div>'
+      + '<div class="detail">' + esc(item.text || '') + '</div>'
+      + '<div class="life-meta"><span>' + esc(item.status || 'open') + '</span><span>' + esc(due) + '</span></div>'
+      + '</article>';
+  }).join('');
+
+  const items = (data.items || []).slice(0, 16).map(item => {
+    const created = item.createdAt ? new Date(item.createdAt).toLocaleString() : 'time unknown';
+    return '<article class="life-item">'
+      + '<div class="jobrun-head"><div><strong>' + esc(item.title || item.text) + '</strong><span>' + esc(item.type || 'task') + ' · ' + esc(item.channel || 'local') + '</span></div><span class="pill ' + (item.priority === 'P1' ? 'warning' : 'healthy') + '">' + esc(item.priority || 'P2') + '</span></div>'
+      + '<div class="detail">' + esc(item.text || '') + '</div>'
+      + '<div class="life-meta"><span>' + esc(item.status || 'open') + '</span><span>' + esc(created) + '</span></div>'
+      + '</article>';
+  }).join('');
+
+  const commands = (data.lineCommands || []).map(command => {
+    return '<article class="life-command-card">'
+      + '<div><strong>' + esc(command.label) + '</strong><span>' + esc(command.postback || command.example) + '</span><span>' + esc(command.example) + '</span></div>'
+      + '<code>' + esc(command.command) + '</code>'
+      + '</article>';
+  }).join('');
+
+  const byType = Object.entries(data.byType || {}).map(([name, count]) => '<article class="alert-quality-mini"><strong>' + esc(count) + '</strong><span>' + esc(name) + '</span></article>').join('');
+  const byChannel = Object.entries(data.byChannel || {}).map(([name, count]) => '<article class="alert-quality-mini"><strong>' + esc(count) + '</strong><span>' + esc(name) + '</span></article>').join('');
+  const policy = data.reminderPolicy || {};
+  const policyHtml = policy
+    ? '<div class="life-policy"><strong>Reminder Policy</strong><span>' + (policy.enabled ? 'ENABLED' : 'DISABLED') + ' · ' + esc(policy.channel || 'line') + ' · ' + esc((policy.schedule || []).join(' / ') || 'no schedule') + '</span><span>Quiet: ' + esc(policy.quietHours?.start || '?') + '-' + esc(policy.quietHours?.end || '?') + ' · Max/day: ' + esc(policy.rateLimit?.maxSendsPerDay || '?') + '</span></div>'
+    : '';
+
+  setHtml('life-command', banner
+    + '<div class="life-brief"><div><strong>' + esc(brief.headline || 'Daily Life Brief') + '</strong><span>' + esc(data.mode || 'preview') + '</span></div><ul>' + guardrails + '</ul></div>' + policyHtml
+    + '<div class="life-grid"><section><h3>Next Actions</h3>' + (nextActions || '<p class="muted">No priority life actions surfaced.</p>') + '<h3>LINE Menu Commands</h3>' + commands + '</section>'
+    + '<section><h3>Inbox</h3>' + (items || '<p class="muted">No inbox items yet.</p>') + '<h3>Breakdown</h3><div class="alert-quality-mini-grid">' + byType + byChannel + '</div></section></div>');
 }
 
 function compactNumber(n) {
@@ -3120,6 +3263,9 @@ async function loadDetails(force = false) {
     ['/api/alert-routes' + suffix, renderAlerts, 'alert-routes'],
     ['/api/incidents' + suffix, renderIncidents, 'incident-radar'],
     ['/api/workflows' + suffix, renderWorkflows, 'workflow-health'],
+    ['/api/ops-ledger' + suffix, renderOpsLedger, 'ops-ledger'],
+    ['/api/alert-quality' + suffix, renderAlertQuality, 'alert-quality'],
+    ['/api/life-command' + suffix, renderLifeCommand, 'life-command'],
     ['/api/job-runs' + suffix, renderJobRuns, 'job-runs'],
     ['/data/commands.json', renderCommands, 'command-cheatsheet'],
     ['/api/platform-docs' + suffix, renderPlatform, 'platform-docs'],
@@ -3507,7 +3653,7 @@ async function triggerSummary() {
 }
 
 function init() {
-  ['codex-quota', 'gemma-quota', 'groq-quota', 'minimax-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
+  ['codex-quota', 'gemma-quota', 'groq-quota', 'minimax-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'ops-ledger', 'alert-quality', 'life-command', 'job-runs', 'command-cheatsheet', 'platform-docs', 'architecture-network', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
   renderHarness({ overall: 'loading', deferred: true, checks: [] });
   if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = getPreferredVoice;
   $('sound-toggle')?.addEventListener('click', playIntroVoice);

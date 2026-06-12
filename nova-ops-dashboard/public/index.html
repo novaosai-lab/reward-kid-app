@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1.11" />
+  <link rel="stylesheet" href="styles.css?v=1.12" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://unpkg.com/vis-network@10.1.0/standalone/umd/vis-network.min.js"></script>
 </head>
@@ -50,6 +50,11 @@
           <span class="tab-glow"></span>
           <span class="tab-icon">⏱</span>
           <span>Jobs & Runs</span>
+        </button>
+        <button class="tab-btn" data-tab="life">
+          <span class="tab-glow"></span>
+          <span class="tab-icon">☑</span>
+          <span>Life Command</span>
         </button>
         <button class="tab-btn" data-tab="commands">
           <span class="tab-glow"></span>
@@ -408,7 +413,7 @@
           <div id="grafana-mcp" class="grafana-mcp"></div>
         </div>
 
-        <div class="card card-tech" data-nova-id="web-inventory">
+        <div class="card card-tech col-span-2" data-nova-id="web-inventory">
           <div class="section-head">
             <h2>Web Inventory</h2>
             <span>Public Routes · Local Ports · Paused Experiments</span>
@@ -499,12 +504,41 @@
     <!-- Tab Panel: Jobs & Runs -->
     <div id="tab-jobs" class="tab-panel">
       <div class="layout-grid-2">
+        <div class="card card-tech col-span-2" data-nova-id="ops-ledger">
+          <div class="section-head">
+            <h2>Ops Event Ledger</h2>
+            <span>Watchdog · Gap Risk · Backfill Commands</span>
+          </div>
+          <div id="ops-ledger" class="ops-ledger"></div>
+        </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="alert-quality">
+          <div class="section-head">
+            <h2>Alert Quality Dashboard</h2>
+            <span>Repeat Groups · Noise Candidates · Escalation Signals</span>
+          </div>
+          <div id="alert-quality" class="alert-quality"></div>
+        </div>
+
         <div class="card card-tech col-span-2" data-nova-id="job-runs">
           <div class="section-head">
             <h2>Jobs & Runs</h2>
             <span>OpenClaw Cron · Harness · Repo Review Queue</span>
           </div>
           <div id="job-runs" class="job-runs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panel: Life Command Center -->
+    <div id="tab-life" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech col-span-2" data-nova-id="life-command">
+          <div class="section-head">
+            <h2>Personal Command Center</h2>
+            <span>LINE Intake · Daily Life Brief · Local Preview</span>
+          </div>
+          <div id="life-command" class="life-command"></div>
         </div>
       </div>
     </div>
@@ -612,7 +646,7 @@
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
 
-  <script src="app.js?v=1.11" defer></script>
+  <script src="app.js?v=1.12" defer></script>
 
   <!-- Interactive Command Center Scripts -->
   <script>

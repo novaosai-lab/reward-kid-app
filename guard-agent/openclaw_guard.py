@@ -67,6 +67,30 @@ def run(cmd: list[str], timeout: int = CMD_TIMEOUT) -> tuple[bool, str]:
         return False, f"exception: {exc}"
 
 
+def parse_json_prefix(output: str) -> dict:
+    decoder = json.JSONDecoder()
+    status, _ = decoder.raw_decode(output.lstrip())
+    return status
+
+
+def node_status_unhealthy(ok: bool, output: str) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    lowered = output.lower()
+    if not ok:
+        reasons.append("command_failed")
+    if "runtime: stopped" in lowered:
+        reasons.append("runtime_stopped")
+    if "state not running" in lowered:
+        reasons.append("state_not_running")
+    if "service is loaded but not running" in lowered:
+        reasons.append("loaded_not_running")
+    if "service: launchagent (not loaded)" in lowered:
+        reasons.append("launchagent_not_loaded")
+    if "could not find service" in lowered:
+        reasons.append("service_missing")
+    return bool(reasons), reasons
+
+
 def can_restart(service: str, state: dict) -> tuple[bool, str]:
     now = int(time.time())
     restarts = state.setdefault("restarts", {}).setdefault(service, [])
@@ -96,7 +120,7 @@ def check_telegram_channel(state: dict):
         return
 
     try:
-        status = json.loads(out)
+        status = parse_json_prefix(out)
     except Exception as exc:
         log("telegram_status_parse_error", error=str(exc), output=out[-1200:])
         return
@@ -154,12 +178,15 @@ def main():
     gw_ok, gw_out = run([OPENCLAW, "gateway", "status"])
     health_ok, health_out = run([OPENCLAW, "gateway", "health"])
     node_ok, node_out = run([OPENCLAW, "node", "status"])
+    node_unhealthy, node_reasons = node_status_unhealthy(node_ok, node_out)
 
     log(
         "health_check",
         gateway_status_ok=gw_ok,
         gateway_health_ok=health_ok,
         node_status_ok=node_ok,
+        node_unhealthy=node_unhealthy,
+        node_reasons=node_reasons,
         gateway_status=gw_out[-1200:],
         gateway_health=health_out[-1200:],
         node_status=node_out[-1200:],
@@ -169,8 +196,8 @@ def main():
         restart("gateway", [OPENCLAW, "gateway", "restart"], "gateway health/status failed", state)
         time.sleep(8)
 
-    if not node_ok:
-        restart("node", [OPENCLAW, "node", "restart"], "node status failed", state)
+    if node_unhealthy:
+        restart("node", [OPENCLAW, "node", "restart"], "node unhealthy: " + ",".join(node_reasons), state)
         time.sleep(5)
 
     check_telegram_channel(state)

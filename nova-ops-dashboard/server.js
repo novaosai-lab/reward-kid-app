@@ -31,6 +31,15 @@ const NOVA_CONTEXT_SLIMMER = path.join(WORKSPACE, 'bin', 'nova-context-slimmer')
 const NOVA_HOT_MEMORY = path.join(WORKSPACE, 'bin', 'nova-hot-memory');
 const PY_GOOGLE = path.join(WORKSPACE, '.venv-google', 'bin', 'python');
 const GRAFANA_BRIDGE = path.join(WORKSPACE, 'grafana-openclaw-bridge');
+const COUPON_ALERT_SCRIPT = path.join(GRAFANA_BRIDGE, 'coupon_points_issue_alert.py');
+const LAUNCHER_WATCHDOG_STATE_JSON = '/Users/nova/.openclaw/state/launcher-watchdog/state.json';
+const LAUNCHER_WATCHDOG_LOG = path.join(WORKSPACE, 'logs', 'launcher-watchdog.out.log');
+const COUPON_ALERT_STATE_JSON = '/Users/nova/.openclaw/state/grafana-openclaw-bridge/coupon-points-issue-alert.json';
+const COUPON_ALERT_OUT_LOG = path.join(WORKSPACE, 'logs', 'coupon-points-issue-alert.out.log');
+const DISCORD_ORDER_SCRIPT = path.join(WORKSPACE, 'discord-alert-forwarder', 'forward_prod_order_alerts.py');
+const DISCORD_ORDER_STATE_JSON = '/Users/nova/.openclaw/state/discord-alert-forwarder/prod-order-monitor-state.json';
+const DISCORD_ORDER_OUT_LOG = '/tmp/openclaw-discord-prod-order-forwarder.out.log';
+const DISCORD_ORDER_JSONL = path.join(WORKSPACE, 'discord-alert-forwarder', 'data', 'prod_order_alerts.jsonl');
 const GROQ_KEY_FILE = '/Users/nova/.openclaw/secrets/cheap-repo-reader/groq-api-key.txt';
 const REPO_REVIEW_QUEUE_JSON = path.join(WORKSPACE, 'research', 'repo-review-queue', 'queue.json');
 const CHEAP_REPO_REVIEWS_DIR = path.join(WORKSPACE, 'research', 'cheap-repo-reviews');
@@ -40,6 +49,8 @@ const MULTIAGENT_WORKER_PROFILES_JSON = path.join(WORKSPACE, 'data', 'multiagent
 const MULTIAGENT_TASK_TEMPLATES_JSON = path.join(WORKSPACE, 'data', 'multiagent-task-templates.json');
 const MULTIAGENT_DASHBOARD_REPO_MATRIX_JSON = path.join(WORKSPACE, 'data', 'multiagent-dashboard-repo-matrix.json');
 const MULTIAGENT_WATCH_PLIST = '/Users/nova/Library/LaunchAgents/ai.openclaw.nova-agent-watch.plist';
+const LIFE_COMMAND_CENTER_JSON = path.join(WORKSPACE, 'data', 'life-command-center.json');
+const LIFE_INBOX_BIN = path.join(WORKSPACE, 'bin', 'nova-life-inbox');
 const NEXUS_PATTERNS_DOC = path.join(WORKSPACE, 'research', 'agency-agents', 'nova-nexus-patterns-2026-06-01.md');
 const AI_ENGINEERING_ADAPTATION_DOC = path.join(WORKSPACE, 'research', 'ai-engineering-from-scratch', 'nova-adaptation-plan-2026-06-01.md');
 const CODEX_ACCOUNT_DEFS = [
@@ -316,6 +327,9 @@ const TTL = {
   tokenSessions: 30000,
   contextBudget: 30000,
   jobRuns: 30000,
+  opsLedger: 10000,
+  alertQuality: 30000,
+  lifeCommand: 10000,
   teamControl: 10000,
   agents: 30000,
   activeTasks: 5000,
@@ -1512,6 +1526,499 @@ async function collectJobRuns() {
   };
 }
 
+function fileInfo(file) {
+  try {
+    const stat = fs.statSync(file);
+    return {
+      exists: true,
+      path: file,
+      mtime: stat.mtime.toISOString(),
+      ageMs: Date.now() - stat.mtime.getTime(),
+      sizeBytes: stat.size,
+    };
+  } catch {
+    return { exists: false, path: file, mtime: '', ageMs: null, sizeBytes: 0 };
+  }
+}
+
+async function readTailLines(file, limit = 20) {
+  try {
+    const text = await fsp.readFile(file, 'utf8');
+    return text.split('\n').filter(Boolean).slice(-limit);
+  } catch {
+    return [];
+  }
+}
+
+async function readJsonlTail(file, limit = 20) {
+  const lines = await readTailLines(file, Math.max(limit * 2, limit));
+  return lines.slice(-limit).map(line => {
+    try { return JSON.parse(line); }
+    catch { return null; }
+  }).filter(Boolean);
+}
+
+function healthFromAge(ageMs, warningMs, criticalMs) {
+  if (!Number.isFinite(Number(ageMs))) return 'unknown';
+  if (ageMs > criticalMs) return 'critical';
+  if (ageMs > warningMs) return 'warning';
+  return 'healthy';
+}
+
+function isoFromEpochSeconds(value) {
+  const n = Number(value || 0);
+  return n > 0 ? new Date(n * 1000).toISOString() : '';
+}
+
+function buildBackfillCommand(jobId, mode = 'dry-run') {
+  if (jobId === 'coupon-points-issue-alert') {
+    const suffix = mode === 'append-sheet' ? '--sheet-only' : '--dry-run';
+    return `cd ${WORKSPACE} && GRAFANA_ENV_FILE=${path.join(GRAFANA_BRIDGE, '.env.amaze')} ${PY_GOOGLE} ${COUPON_ALERT_SCRIPT} --from <UTC_START_ISO> --to <UTC_END_ISO> ${suffix}`;
+  }
+  if (jobId === 'discord-prod-order-forwarder') {
+    const env = [
+      'ORDER_ALERT_AFTER_ID=<LAST_SHEET_MESSAGE_ID>',
+      'ORDER_ALERT_READ_LIMIT=100',
+      'ORDER_ALERT_IGNORE_SEEN=1',
+      'ORDER_ALERT_DISABLE_DEDUPE=1',
+    ].join(' ');
+    return `cd ${path.dirname(DISCORD_ORDER_SCRIPT)} && ${env} ${PY_GOOGLE} ${DISCORD_ORDER_SCRIPT}`;
+  }
+  return '';
+}
+
+async function collectOpsLedger() {
+  const [watchdogState, couponState, discordState, watchdogLines, discordAlerts] = await Promise.all([
+    readJsonFile(LAUNCHER_WATCHDOG_STATE_JSON),
+    readJsonFile(COUPON_ALERT_STATE_JSON),
+    readJsonFile(DISCORD_ORDER_STATE_JSON),
+    readTailLines(LAUNCHER_WATCHDOG_LOG, 40),
+    readJsonlTail(DISCORD_ORDER_JSONL, 12),
+  ]);
+
+  const jobs = [
+    {
+      id: 'coupon-points-issue-alert',
+      name: 'Coupon Points Issue Alert',
+      source: 'Grafana Quickwit -> Google Sheet / Google Chat',
+      expectedIntervalMs: 3 * 60 * 60 * 1000,
+      warningMs: 6 * 60 * 60 * 1000,
+      criticalMs: 12 * 60 * 60 * 1000,
+      outLog: fileInfo(COUPON_ALERT_OUT_LOG),
+      statePath: COUPON_ALERT_STATE_JSON,
+      state: couponState || {},
+      watchdog: watchdogState?.['coupon-points-issue-alert'] || {},
+      lastEventAt: couponState?.last_checked_at || fileInfo(COUPON_ALERT_OUT_LOG).mtime,
+      lastCursor: couponState?.last_window ? `${couponState.last_window.from || '?'} -> ${couponState.last_window.to || '?'}` : '',
+      lastCount: couponState?.last_new_errors,
+      backfillDryRunCommand: buildBackfillCommand('coupon-points-issue-alert', 'dry-run'),
+      backfillAppendCommand: buildBackfillCommand('coupon-points-issue-alert', 'append-sheet'),
+    },
+    {
+      id: 'discord-prod-order-forwarder',
+      name: 'Discord Prod Order Forwarder',
+      source: 'Discord #prod-order-monitor -> local JSONL / Google Sheet',
+      expectedIntervalMs: 60 * 1000,
+      warningMs: 10 * 60 * 1000,
+      criticalMs: 30 * 60 * 1000,
+      outLog: fileInfo(DISCORD_ORDER_OUT_LOG),
+      statePath: DISCORD_ORDER_STATE_JSON,
+      state: discordState || {},
+      watchdog: watchdogState?.['discord-prod-order-forwarder'] || {},
+      lastEventAt: isoFromEpochSeconds(discordState?.last_run) || fileInfo(DISCORD_ORDER_OUT_LOG).mtime,
+      lastCursor: Array.isArray(discordState?.seen_ids) && discordState.seen_ids.length ? discordState.seen_ids[discordState.seen_ids.length - 1] : '',
+      lastCount: discordState?.last_sent_count,
+      backfillDryRunCommand: 'No no-write dry-run in current Discord script. Use state/JSONL review first.',
+      backfillAppendCommand: buildBackfillCommand('discord-prod-order-forwarder', 'append-sheet'),
+    },
+  ].map(job => {
+    const ageMs = job.lastEventAt ? Date.now() - Date.parse(job.lastEventAt) : job.outLog.ageMs;
+    const status = healthFromAge(ageMs, job.warningMs, job.criticalMs);
+    const recoveryCount = Array.isArray(job.watchdog?.recoveries) ? job.watchdog.recoveries.length : 0;
+    const risk = status === 'critical'
+      ? 'Backfill likely required before trusting the sheet.'
+      : status === 'warning'
+        ? 'Check for a small collection gap.'
+        : 'No gap detected from local state.';
+    return { ...job, ageMs, status, recoveryCount, risk };
+  });
+
+  const watchdogEvents = watchdogLines.map(line => ({
+    ts: line.match(/^\[([^\]]+)\]/)?.[1] || '',
+    source: 'launcher-watchdog',
+    message: line.replace(/^\[[^\]]+\]\s*/, ''),
+    status: /silent|failed|missing/i.test(line) ? 'warning' : /recovered|healthy|installed/i.test(line) ? 'healthy' : 'unknown',
+  })).slice(-20).reverse();
+
+  const discordEvents = discordAlerts.map(alert => ({
+    ts: alert.timestampUtc || '',
+    source: 'discord-prod-order-forwarder',
+    message: `${alert.title || 'Prod order alert'}${alert.tid ? ' · tid ' + alert.tid : ''}`,
+    status: String(alert.http_code || '').startsWith('5') ? 'critical' : 'warning',
+    id: alert.id || '',
+  })).reverse();
+
+  const summary = jobs.reduce((acc, job) => {
+    acc.jobs += 1;
+    acc[job.status] = (acc[job.status] || 0) + 1;
+    if (job.status === 'warning' || job.status === 'critical') acc.needsReview += 1;
+    return acc;
+  }, { jobs: 0, healthy: 0, warning: 0, critical: 0, unknown: 0, needsReview: 0 });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: 'read-only ledger MVP',
+    summary,
+    jobs,
+    events: [...watchdogEvents, ...discordEvents]
+      .sort((a, b) => Date.parse(b.ts || 0) - Date.parse(a.ts || 0))
+      .slice(0, 30),
+    guardrails: [
+      'Dashboard does not append to Google Sheets automatically.',
+      'Coupon backfill has a safe dry-run command and a sheet-only append command.',
+      'Discord backfill should be message-id based; review local JSONL/state before append.',
+    ],
+  };
+}
+
+function normalizeLifeItem(raw = {}) {
+  const createdAt = raw.createdAt || raw.ts || raw.timestamp || new Date().toISOString();
+  const text = String(raw.text || raw.message || raw.title || '').trim();
+  const type = raw.type || (
+    /เตือน|remind|due|นัด/i.test(text) ? 'reminder'
+      : /ไอเดีย|idea|น่าทำ|ลองทำ/i.test(text) ? 'idea'
+        : /ระบบ|project|โปรเจกต์|ทำแอป/i.test(text) ? 'project'
+          : 'task'
+  );
+  return {
+    id: raw.id || `life-${Date.parse(createdAt) || Date.now()}`,
+    createdAt,
+    updatedAt: raw.updatedAt || createdAt,
+    source: raw.source || 'manual',
+    channel: raw.channel || raw.source || 'unknown',
+    type,
+    status: raw.status || 'open',
+    priority: raw.priority || (type === 'reminder' ? 'P1' : 'P2'),
+    title: raw.title || text.slice(0, 72) || 'Untitled life item',
+    text,
+    tags: Array.isArray(raw.tags) ? raw.tags : [],
+    dueAt: raw.dueAt || null,
+    snoozeUntil: raw.snoozeUntil || null,
+  };
+}
+
+async function collectLifeCommand() {
+  const store = await readJsonFile(LIFE_COMMAND_CENTER_JSON) || { version: 1, items: [], briefHistory: [] };
+  const reminderPolicy = await readJsonFile(path.join(WORKSPACE, 'data', 'life-reminder-policy.json'));
+  const items = (Array.isArray(store.items) ? store.items : [])
+    .map(normalizeLifeItem)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const openItems = items.filter(item => !['done', 'archived', 'cancelled'].includes(item.status));
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowEnd = new Date(todayStart);
+  tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
+
+  const dueSoon = openItems.filter(item => {
+    if (!item.dueAt) return false;
+    const ts = Date.parse(item.dueAt);
+    return Number.isFinite(ts) && ts <= tomorrowEnd.getTime();
+  });
+  const nextActionSeen = new Set();
+  const nextActions = [
+    ...dueSoon,
+    ...openItems.filter(item => item.priority === 'P1'),
+    ...openItems.filter(item => item.type === 'project'),
+  ].filter(item => {
+    if (nextActionSeen.has(item.id)) return false;
+    nextActionSeen.add(item.id);
+    return true;
+  }).slice(0, 8);
+
+  const byType = openItems.reduce((acc, item) => {
+    acc[item.type] = (acc[item.type] || 0) + 1;
+    return acc;
+  }, {});
+  const byChannel = openItems.reduce((acc, item) => {
+    acc[item.channel] = (acc[item.channel] || 0) + 1;
+    return acc;
+  }, {});
+
+  const lineCommands = [
+    {
+      label: 'Daily Brief',
+      postback: 'richmenu=daily-brief',
+      example: 'Tap DAILY BRIEF',
+      command: `${LIFE_INBOX_BIN} brief`,
+    },
+    {
+      label: 'Task Inbox',
+      postback: 'richmenu=task-inbox',
+      example: 'Nova task ต่อ dashboard daily life',
+      command: `${LIFE_INBOX_BIN} add --source line --type task --text "<ข้อความจาก LINE>"`,
+    },
+    {
+      label: 'Expense & Bill',
+      postback: 'richmenu=expense-bill',
+      example: 'Nova bill ค่าไฟ 1200 จ่ายแล้ว',
+      command: `${LIFE_INBOX_BIN} add --source line --type reminder --priority P1 --text "<ข้อความจาก LINE>"`,
+    },
+    {
+      label: 'Health Tracker',
+      postback: 'richmenu=health-tracker',
+      example: 'Nova health นอน 7 ชม. เดิน 6000 ก้าว',
+      command: `${LIFE_INBOX_BIN} add --source line --type note --priority P2 --tags health --text "<ข้อความจาก LINE>"`,
+    },
+    {
+      label: 'Home Ops',
+      postback: 'richmenu=home-ops',
+      example: 'Nova home ประกันรถหมดอายุเดือนหน้า',
+      command: `${LIFE_INBOX_BIN} add --source line --type idea --priority P2 --text "<ข้อความจาก LINE>"`,
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: 'local-first preview',
+    source: LIFE_COMMAND_CENTER_JSON,
+    summary: {
+      open: openItems.length,
+      tasks: byType.task || 0,
+      reminders: byType.reminder || 0,
+      ideas: byType.idea || 0,
+      projects: byType.project || 0,
+      dueSoon: dueSoon.length,
+      channels: Object.keys(byChannel).length,
+    },
+    dailyBrief: {
+      posture: openItems.length === 0 ? 'clear' : dueSoon.length ? 'attention' : 'normal',
+      headline: dueSoon.length
+        ? `${dueSoon.length} life item(s) due soon`
+        : openItems.length
+          ? `${openItems.length} open life item(s) waiting`
+          : 'No open life items',
+      nextActions,
+      guardrails: [
+        'Local JSON store only; no automatic external reminders yet.',
+        'LINE menu intake should add items first, then brief can summarize.',
+        'Approve before enabling scheduled outbound nudges.',
+      ],
+    },
+    reminderPolicy: reminderPolicy ? {
+      enabled: Boolean(reminderPolicy.enabled),
+      channel: reminderPolicy.channel || 'line',
+      schedule: reminderPolicy.dailyBrief?.times || [],
+      quietHours: reminderPolicy.quietHours || {},
+      rateLimit: reminderPolicy.rateLimit || {},
+      dueReminder: reminderPolicy.dueReminder || {},
+    } : null,
+    items: openItems.slice(0, 40),
+    byType,
+    byChannel,
+    lineCommands,
+  };
+}
+
+function alertSignature(alert = {}) {
+  const err = alert.err_code || alert.errCode || '';
+  if (err) return String(err);
+  return [
+    alert.title || 'untitled',
+    alert.endpoint || '',
+    alert.http_code || alert.httpCode || '',
+    alert.err_msg || alert.errMsg || '',
+  ].map(x => String(x || '').trim()).join('|');
+}
+
+function endpointName(endpoint = '') {
+  const value = String(endpoint || '');
+  if (!value) return 'no endpoint';
+  try {
+    const parsed = new URL(value);
+    return parsed.pathname || value;
+  } catch {
+    return value.replace(/^https?:\/\/[^/]+/i, '') || value;
+  }
+}
+
+function classifyAlertGroup(group) {
+  const text = [
+    group.signature,
+    group.title,
+    group.endpoint,
+    group.errMsg,
+    group.category,
+    group.impact,
+  ].join(' ').toLowerCase();
+  const has5xx = group.httpCodes.some(code => String(code).startsWith('5'));
+  const repeat = group.count >= 3;
+  const heavyRepeat = group.count >= 8;
+  const businessValidation = /validate|mismatch|return_pending|checkout_expire|pending/.test(text) && group.httpCodes.every(code => !String(code).startsWith('5'));
+  const paymentOrOrderFlow = /payment|placeorder|place_order|bulk-update|inquiry|order status/.test(text);
+  const highImpact = /high|critical|p0|p1/.test(text);
+  if (has5xx) {
+    return { action: 'escalate', status: 'critical', reason: '5xx/server-side signal' };
+  }
+  if (paymentOrOrderFlow && (highImpact || group.last6h >= 5)) {
+    return { action: 'escalate', status: 'critical', reason: 'Repeated payment/order-flow signal' };
+  }
+  if (paymentOrOrderFlow && group.count >= 10) {
+    return { action: 'investigate', status: 'warning', reason: 'Historically repeated order-flow pattern' };
+  }
+  if (heavyRepeat && businessValidation) {
+    return { action: 'suppress/digest', status: 'warning', reason: 'High-repeat business validation pattern' };
+  }
+  if (repeat) {
+    return { action: 'digest', status: 'warning', reason: 'Repeated signature; group into one digest' };
+  }
+  if (businessValidation) {
+    return { action: 'watch', status: 'healthy', reason: 'Single business validation; useful as row evidence' };
+  }
+  return { action: 'watch', status: 'unknown', reason: 'Insufficient recurrence for rule change' };
+}
+
+function parseCouponRunLines(lines) {
+  return lines.map(line => {
+    try { return JSON.parse(line); }
+    catch { return null; }
+  }).filter(item => item && typeof item === 'object' && ('new_errors' in item || 'matched' in item));
+}
+
+async function collectAlertQuality() {
+  const [discordAlerts, couponLines] = await Promise.all([
+    readJsonlTail(DISCORD_ORDER_JSONL, 1000),
+    readTailLines(COUPON_ALERT_OUT_LOG, 120),
+  ]);
+  const couponRuns = parseCouponRunLines(couponLines);
+  const now = Date.now();
+  const windows = {
+    last6h: now - 6 * 60 * 60 * 1000,
+    last24h: now - 24 * 60 * 60 * 1000,
+  };
+  const groups = new Map();
+  const endpointCounts = new Map();
+  const categoryCounts = new Map();
+
+  for (const alert of discordAlerts) {
+    const ts = Date.parse(alert.timestampUtc || '') || 0;
+    const signature = alertSignature(alert);
+    const existing = groups.get(signature) || {
+      signature,
+      source: 'discord-prod-order-forwarder',
+      title: alert.title || 'Prod order alert',
+      endpoint: endpointName(alert.endpoint),
+      category: alert.category || 'Uncategorized',
+      impact: alert.impact || 'Review',
+      errCode: alert.err_code || '',
+      errMsg: alert.err_msg || '',
+      httpCodes: [],
+      tids: [],
+      orders: [],
+      count: 0,
+      last6h: 0,
+      last24h: 0,
+      firstSeenAt: alert.timestampUtc || '',
+      lastSeenAt: alert.timestampUtc || '',
+      sampleGrafana: alert.grafana || '',
+      samplePodLog: alert.pod_log || '',
+      recommendedAction: alert.recommended_action || '',
+    };
+    existing.count += 1;
+    if (ts >= windows.last6h) existing.last6h += 1;
+    if (ts >= windows.last24h) existing.last24h += 1;
+    if (ts && (!Date.parse(existing.firstSeenAt) || ts < Date.parse(existing.firstSeenAt))) existing.firstSeenAt = alert.timestampUtc;
+    if (ts && (!Date.parse(existing.lastSeenAt) || ts > Date.parse(existing.lastSeenAt))) existing.lastSeenAt = alert.timestampUtc;
+    if (alert.http_code != null && !existing.httpCodes.includes(alert.http_code)) existing.httpCodes.push(alert.http_code);
+    if (alert.tid && !existing.tids.includes(alert.tid)) existing.tids.push(alert.tid);
+    if (alert.order && !existing.orders.includes(alert.order)) existing.orders.push(alert.order);
+    groups.set(signature, existing);
+
+    const endpoint = endpointName(alert.endpoint);
+    endpointCounts.set(endpoint, (endpointCounts.get(endpoint) || 0) + 1);
+    const category = alert.category || 'Uncategorized';
+    categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+  }
+
+  const grouped = [...groups.values()].map(group => {
+    const classification = classifyAlertGroup(group);
+    return {
+      ...group,
+      httpCodes: group.httpCodes.sort(),
+      tids: group.tids.slice(-5),
+      orders: group.orders.slice(-5),
+      ...classification,
+    };
+  }).sort((a, b) => b.count - a.count || Date.parse(b.lastSeenAt || 0) - Date.parse(a.lastSeenAt || 0));
+
+  const couponNewErrors = couponRuns.reduce((sum, run) => sum + Number(run.new_errors || 0), 0);
+  const couponMatched = couponRuns.reduce((sum, run) => sum + Number(run.matched || 0), 0);
+  const couponRows = couponRuns.reduce((sum, run) => sum + Number(run.sheet?.rows || 0), 0);
+  const couponSignals = [{
+    source: 'coupon-points-issue-alert',
+    action: couponNewErrors >= 5 ? 'digest' : couponNewErrors > 0 ? 'watch' : 'watch',
+    status: couponNewErrors >= 5 ? 'warning' : 'healthy',
+    title: 'Coupon points issue API aggregate',
+    signature: 'coupon-points-issue-alert',
+    count: couponMatched,
+    last24h: couponMatched,
+    last6h: couponMatched,
+    endpoint: '/r4m/v2/coupon/points/issue',
+    reason: couponNewErrors > 0 ? `${couponNewErrors} fresh errors surfaced in recent runs` : 'No fresh coupon errors in recent run log',
+    recommendedAction: couponNewErrors > 0 ? 'Review Grafana rows and keep Sheet-only backfill available.' : 'No rule change needed.',
+    sheetRows: couponRows,
+  }];
+
+  const byAction = grouped.reduce((acc, group) => {
+    acc[group.action] = (acc[group.action] || 0) + 1;
+    return acc;
+  }, {});
+  const endpointHotspots = [...endpointCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([endpoint, count]) => ({ endpoint, count }));
+  const categories = [...categoryCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([category, count]) => ({ category, count }));
+
+  const suggestions = [];
+  const noisy = grouped.filter(group => group.action === 'suppress/digest');
+  const escalate = grouped.filter(group => group.action === 'escalate');
+  const investigate = grouped.filter(group => group.action === 'investigate');
+  if (escalate.length) suggestions.push(`Escalate ${escalate.length} repeated high-impact/payment/order-flow group(s).`);
+  if (investigate.length) suggestions.push(`Investigate ${investigate.length} historical order-flow group(s) before changing alert policy.`);
+  if (noisy.length) suggestions.push(`Convert ${noisy.length} high-repeat validation group(s) into digest/suppression rules.`);
+  if (!suggestions.length) suggestions.push('Keep current rules; no strong suppression/escalation candidate from local data.');
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'discord-alert-forwarder JSONL + coupon aggregate run log',
+    mode: 'read-only quality MVP',
+    summary: {
+      rawAlerts: discordAlerts.length,
+      groups: grouped.length,
+      escalate: byAction.escalate || 0,
+      investigate: byAction.investigate || 0,
+      digest: byAction.digest || 0,
+      suppressDigest: byAction['suppress/digest'] || 0,
+      watch: byAction.watch || 0,
+      couponRuns: couponRuns.length,
+      couponNewErrors,
+      couponRows,
+    },
+    groups: grouped.slice(0, 30),
+    endpointHotspots,
+    categories,
+    couponSignals,
+    suggestions,
+    guardrails: [
+      'Read-only: this dashboard does not suppress or change alert delivery rules.',
+      'Use suppress/digest recommendations as candidates for review, not automatic policy.',
+      'Escalate candidates still need Grafana/TID evidence review before paging humans.',
+    ],
+  };
+}
+
 async function collectAndPersistStatus() {
   const value = await collect();
   await fsp.mkdir(path.dirname(STATUS_SNAPSHOT_JSON), { recursive: true }).catch(() => {});
@@ -1918,7 +2425,7 @@ async function readCodexActiveAccount(config, codexHome = '') {
   const value = await requestCodexAppServerJson({
     method: methods.account,
     requestParams: { refreshToken: false },
-    timeoutMs: 20000,
+    timeoutMs: 60000,
     startOptions: codexAppServerStartOptions(codexHome),
     config,
     isolated: true,
@@ -1931,7 +2438,7 @@ async function readCodexRealtimeLimit(config, accountId, codexHome = '') {
   const request = {
     method: methods.rateLimits,
     requestParams: undefined,
-    timeoutMs: 20000,
+    timeoutMs: 60000,
     startOptions: codexAppServerStartOptions(codexHome),
     config,
     isolated: true,
@@ -3010,6 +3517,21 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/job-runs') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('job-runs', TTL.jobRuns, collectJobRuns, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ jobs: [], runs: [], error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/ops-ledger') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('ops-ledger', TTL.opsLedger, collectOpsLedger, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ jobs: [], events: [], error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/alert-quality') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('alert-quality', TTL.alertQuality, collectAlertQuality, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ groups: [], endpointHotspots: [], error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/life-command') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('life-command', TTL.lifeCommand, collectLifeCommand, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ items: [], error: e.message })); }
     return;
   }
   if (url.pathname === '/api/platform-docs') {
