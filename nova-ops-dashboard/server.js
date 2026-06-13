@@ -3102,6 +3102,12 @@ async function collect() {
   const healthChecks = guardLog.filter(x => x.event === 'health_check');
 
   const channels = ['Telegram', 'Discord'].map(name => readOpenClawChannel(status.output, name));
+  const launcherWatchdogLog = fileInfo(LAUNCHER_WATCHDOG_LOG);
+  const launcherWatchdogState = await readJsonFile(LAUNCHER_WATCHDOG_STATE_JSON);
+  const launcherWatchdogStatus = healthFromAge(launcherWatchdogLog.ageMs, 20 * 60 * 1000, 45 * 60 * 1000);
+  const launcherWatchdogDetail = launcherWatchdogLog.exists
+    ? `last run ${Math.round((launcherWatchdogLog.ageMs || 0) / 60000)}m ago · monitored=${Object.keys(launcherWatchdogState || {}).length}`
+    : 'launcher-watchdog log missing';
 
   let gatewayS = gatewayStatus.ok && gatewayHealth.ok ? 'healthy' : 'critical';
   let gatewayDetail = gatewayHealth.output || gatewayStatus.output;
@@ -3117,6 +3123,7 @@ async function collect() {
     { name: 'OpenClaw Node', status: nodeStatus.ok && /running/i.test(nodeStatus.output) ? 'healthy' : statusFromText(nodeStatus.output), detail: nodeStatus.output },
     { name: 'Guard Agent', status: guardRecent ? 'healthy' : 'warning', detail: guardRecent ? `${guardRecent.event} @ ${guardRecent.ts}` : 'No guard log yet' },
     { name: 'Channels', status: channels.every(c => c.status === 'healthy') ? 'healthy' : 'warning', detail: channels.map(c => `${c.name}: ${c.detail || c.status}`).join(' · ') },
+    { name: 'Launcher Watchdog', status: launcherWatchdogStatus, detail: launcherWatchdogDetail },
   ];
 
   const dockerRows = docker2.ok ? docker2.output.split('\n').filter(Boolean).map(row => {
@@ -3137,6 +3144,11 @@ async function collect() {
       heartbeat: heartbeatMatch?.[1]?.trim() || 'unknown',
       guardChecks: healthChecks.length,
       recentRestarts: restarts.length,
+      launcherWatchdog: {
+        status: launcherWatchdogStatus,
+        log: launcherWatchdogLog,
+        state: launcherWatchdogState || {},
+      },
     },
     services,
     channels,
