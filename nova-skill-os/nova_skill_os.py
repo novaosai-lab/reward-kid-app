@@ -19,6 +19,8 @@ KNOWLEDGE_WIKI = ROOT / 'knowledge-wiki'
 CRON_SAFETY_PLAYBOOK = ROOT / 'playbooks/cron-safety-checklist.md'
 MEMORY_FENCING_PLAYBOOK = ROOT / 'playbooks/memory-context-fencing.md'
 TOOL_LOOP_PLAYBOOK = ROOT / 'playbooks/tool-loop-guardrails.md'
+TOOL_LOOP_V3_PLAYBOOK = ROOT / 'playbooks/tool-loop-guardrails-v3.md'
+TOOL_LOOP_GUARD_V3 = Path(__file__).parent / 'tool_loop_guard.py'
 PLUGIN_INTAKE_PLAYBOOK = ROOT / 'playbooks/plugin-intake-check.md'
 ARTIFACT_VERIFIER_PLAYBOOK = ROOT / 'playbooks/nova-artifact-verifier.md'
 DEFAULT_PLUGIN_INTAKE_PATH = Path('/tmp/claude-plugins-official-review/plugins/example-plugin')
@@ -305,6 +307,124 @@ def cron_safety_report(json_out: bool = False) -> None:
     print('\nPolicy: review-only. Cron mutations or external delivery changes require scoped approval.')
 
 
+USER_FACING_KEYWORDS = ('alert', 'send', 'report', 'broadcast', 'notify', 'summary', 'digest', 'reminder')
+SILENT_INTENT_KEYWORDS = ('report-only', 'no external send', 'keep internal', 'silent', 'internal only', 'no announce')
+
+
+def _delivery_audit_evaluate(spec: dict) -> dict:
+    """Dry-run preflight for a cron job spec. Report-only, never mutates."""
+    issues: list[dict] = []
+    name = spec.get('name') or '?'
+    payload = spec.get('payload') or {}
+    delivery = spec.get('delivery') or {}
+    kind = payload.get('kind')
+    text = ' '.join(str(payload.get(k) or '') for k in ('message', 'text', 'prompt')).lower()
+    channel = delivery.get('channel')
+    to = delivery.get('to')
+    mode = delivery.get('mode') or ('announce' if (channel or to) else 'none')
+    has_target = bool(channel and to)
+    has_silent_intent = any(k in text for k in SILENT_INTENT_KEYWORDS)
+    # User-facing keyword check is suppressed when the message has explicit
+    # report-only/internal intent — a substring like "report-only" must not
+    # trip the user-facing rule on its own.
+    user_facing_keyword_hit = (
+        any(k in text for k in USER_FACING_KEYWORDS) and not has_silent_intent
+    )
+
+    if kind == 'agentTurn' and user_facing_keyword_hit and mode in ('none', None) and not has_target:
+        issues.append({'job': name, 'severity': 'warn',
+                       'issue': 'user-facing agentTurn job has no explicit delivery target'})
+    if mode == 'announce' and not has_target:
+        issues.append({'job': name, 'severity': 'warn',
+                       'issue': 'announce mode requires channel + to'})
+    if kind == 'agentTurn' and mode == 'none' and not has_silent_intent:
+        issues.append({'job': name, 'severity': 'warn',
+                       'issue': 'silent agentTurn should state report-only/internal intent'})
+
+    return {
+        'ok': not any(i['severity'] == 'warn' for i in issues),
+        'mode': 'report-only',
+        'job_name': name,
+        'issue_count': len(issues),
+        'issues': issues,
+        'policy': 'Report-only dry-run. No cron job was created, updated, removed, run, or delivered.',
+    }
+
+
+def _read_spec_from_argv(argv: list[str]) -> dict:
+    """Read a JSON job spec from --from <path> (if given) or from stdin."""
+    src = None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == '--from' and i + 1 < len(argv):
+            src = argv[i + 1]
+            break
+        if a.startswith('--from='):
+            src = a.split('=', 1)[1]
+            break
+        i += 1
+    if src:
+        text = Path(src).read_text(encoding='utf-8')
+    else:
+        text = sys.stdin.read()
+    return json.loads(text)
+
+
+def delivery_audit(argv: list[str], json_out: bool = False) -> None:
+    """Report-only preflight for a single cron job spec from stdin or --from <path>."""
+    try:
+        spec = _read_spec_from_argv(argv)
+    except Exception as exc:
+        result = {
+            'ok': False,
+            'mode': 'report-only',
+            'error': f'spec read/parse failed: {type(exc).__name__}: {exc}',
+            'issues': [{'job': '?', 'severity': 'fail', 'issue': 'invalid spec input'}],
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    result = _delivery_audit_evaluate(spec)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cron_delivery_audit(argv: list[str], json_out: bool = False) -> None:
+    """Live report-only audit over all cron jobs via delivery_audit() per job."""
+    issues: list[dict] = []
+    ok, out = False, ''
+    try:
+        out = subprocess.check_output([OPENCLAW, 'cron', 'list', '--json', '--all'], text=True, stderr=subprocess.STDOUT, timeout=30).strip()
+        ok = True
+    except Exception as exc:
+        out = f'ERROR: {type(exc).__name__}: {exc}'
+
+    jobs: list[dict] = []
+    if ok:
+        try:
+            jobs = json.loads(out).get('jobs', [])
+        except Exception as exc:
+            issues.append({'job': '*', 'severity': 'warn', 'issue': f'cron JSON parse failed: {exc}'})
+
+    for job in jobs:
+        if not job.get('enabled', True):
+            continue
+        per = _delivery_audit_evaluate(job)
+        for item in per.get('issues', []):
+            issues.append(item)
+
+    result = {
+        'ok': ok and not any(i['severity'] == 'warn' for i in issues),
+        'mode': 'report-only',
+        'job_count': len(jobs),
+        'issue_count': len(issues),
+        'issues': issues,
+        'policy': 'Review only. Do not create, update, remove, run, or deliver cron jobs from this report.',
+    }
+    if not ok:
+        result['error'] = out[-500:]
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def memory_fencing_report(json_out: bool = False) -> None:
     docs = [
         ROOT / 'docs/nova-memory-model.md',
@@ -376,6 +496,73 @@ def tool_loop_guard_report(json_out: bool = False) -> None:
     else:
         print('- pass: repeated-failure thresholds and recovery policy are documented')
     print('\nPolicy: stop blind retries; change strategy or ask one concise question when blocked.')
+
+
+def tool_loop_guard_v3_report(args: list[str], json_out: bool = False) -> None:
+    """v3 runtime-guard: scans session JSONL logs for tool-call overuse.
+
+    Uses the standalone module at nova-skill-os/tool_loop_guard.py. Report-only:
+    never enforces, only reports violations and writes rolling state.
+    """
+    import importlib.util
+    if not TOOL_LOOP_GUARD_V3.exists():
+        if json_out:
+            print(json.dumps({'ok': False, 'mode': 'report-only', 'error': f'missing module {TOOL_LOOP_GUARD_V3}'}))
+        else:
+            print(f'Tool Loop Guard v3: missing module {TOOL_LOOP_GUARD_V3}')
+        return
+    spec = importlib.util.spec_from_file_location('tool_loop_guard_v3', TOOL_LOOP_GUARD_V3)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['tool_loop_guard_v3'] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    # Parse --since-min N
+    lookback = 60
+    if '--since-min' in args:
+        i = args.index('--since-min')
+        if i + 1 < len(args):
+            try:
+                lookback = int(args[i + 1])
+            except ValueError:
+                pass
+    report = mod.build_report(lookback_minutes=lookback)
+    # Add v3-specific metadata
+    report['script'] = str(TOOL_LOOP_GUARD_V3)
+    report['command'] = 'tool-loop-guard-v3'
+    # OK = no alert-severity violations; warn otherwise
+    has_alert = report['summary']['by_severity'].get('alert', 0) > 0
+    has_warn = report['summary']['by_severity'].get('warn', 0) > 0
+    report['ok'] = not has_alert
+    report['status'] = 'pass' if report['ok'] and not has_warn else 'warn' if not has_alert else 'alert'
+    if json_out:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return
+    # Human
+    print(f"Tool Loop Guard v3 — {report['status']} (mode={report['mode']})")
+    print(f"  Script: {TOOL_LOOP_GUARD_V3.name}")
+    print(f"  Playbook: {TOOL_LOOP_V3_PLAYBOOK.name}")
+    s = report['summary']
+    print(f"  Violations: {s['total']} (alert={s['by_severity']['alert']}, "
+          f"warn={s['by_severity']['warn']}, info={s['by_severity']['info']})")
+    if s['by_type']:
+        print(f"  By type: {s['by_type']}")
+    daily = report.get('daily_counts') or {}
+    if daily:
+        print('  Today (UTC):')
+        for tool, n in sorted(daily.items(), key=lambda kv: -kv[1])[:8]:
+            cap = report['thresholds'].get('daily_caps', {}).get(tool)
+            mark = f'  ⚠️  > cap {cap}' if cap is not None and n > cap else ''
+            print(f'    {tool}: {n}{mark}')
+    if report['violations']:
+        print('  Top violations:')
+        for v in report['violations'][:10]:
+            print(f"    [{v['severity'].upper():5s}] {v['type']:14s} "
+                  f"{v['tool_name']:20s} {v['count']}>{v['threshold']} "
+                  f"session={v['session_id'][:8]}")
+        if len(report['violations']) > 10:
+            print(f"    ... and {len(report['violations']) - 10} more (use --json)")
+    else:
+        print('  ✅ No violations in window.')
 
 
 # ── Context Budget ──────────────────────────────────────────────────────────────
@@ -1005,10 +1192,16 @@ def main(argv: list[str]) -> int:
         improvement_report()
     elif cmd in {'cron-safety', '/cron-safety'}:
         cron_safety_report('--json' in argv)
+    elif cmd in {'cron-add-preflight', '/cron-add-preflight'}:
+        delivery_audit(argv[2:], '--json' in argv)
+    elif cmd in {'cron-delivery-audit', '/cron-delivery-audit'}:
+        cron_delivery_audit(argv[2:], '--json' in argv)
     elif cmd in {'memory-fencing', '/memory-fencing'}:
         memory_fencing_report('--json' in argv)
     elif cmd in {'tool-loop-guard', '/tool-loop-guard'}:
         tool_loop_guard_report('--json' in argv)
+    elif cmd in {'tool-loop-guard-v3', '/tool-loop-guard-v3'}:
+        tool_loop_guard_v3_report(argv[2:], '--json' in argv)
     elif cmd in {'context-budget', '/context-budget'}:
         context_budget_report('--json' in argv)
     elif cmd in {'artifact-verifier', '/artifact-verifier'}:
@@ -1017,7 +1210,7 @@ def main(argv: list[str]) -> int:
         path_args = [x for x in argv[2:] if not x.startswith('--')]
         plugin_intake_check(path_args[0] if path_args else None, '--json' in argv)
     else:
-        print('Commands: skills | skill-lifecycle | skill-profiles | wiki-status | improvement-report | cron-safety | memory-fencing | tool-loop-guard | context-budget | artifact-verifier | plugin-intake-check | alert-dashboard | alert-summary | openclaw-health')
+        print('Commands: skills | skill-lifecycle | skill-profiles | wiki-status | improvement-report | cron-safety | cron-add-preflight | cron-delivery-audit | memory-fencing | tool-loop-guard | tool-loop-guard-v3 | context-budget | artifact-verifier | plugin-intake-check | alert-dashboard | alert-summary | openclaw-health')
     return 0
 
 

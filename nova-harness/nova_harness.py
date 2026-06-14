@@ -20,6 +20,8 @@ SUPPORT_DIGEST_JSON = WS / 'nova-ops-dashboard/public/data/support_digest.json'
 CONTEXT_GUARD = WS / 'nova-skill-os/context_guard.py'
 ACTION_GUARD = WS / 'nova-skill-os/action_guard.py'
 SKILL_OS = WS / 'nova-skill-os/nova_skill_os.py'
+MORNING_BRIEF_BIN = WS / 'bin/nova-morning-brief'
+MORNING_BRIEF_PLIST = Path.home() / 'Library/LaunchAgents/ai.openclaw.nova-morning-brief.plist'
 
 @dataclass
 class Check:
@@ -37,6 +39,42 @@ def run(cmd: list[str], timeout=20, cwd: Path | None = None):
         return p.returncode == 0, out, int((time.time()-t)*1000)
     except Exception as e:
         return False, str(e), int((time.time()-t)*1000)
+
+
+def check_morning_brief_schedule():
+    t=time.time()
+    if not MORNING_BRIEF_BIN.exists():
+        return Check('morning_brief.schedule', 'fail', f'missing {MORNING_BRIEF_BIN}', 0)
+    if not MORNING_BRIEF_PLIST.exists():
+        return Check('morning_brief.schedule', 'warn',
+            f'missing {MORNING_BRIEF_PLIST} — run: cp {WS}/bin/ai.openclaw.nova-morning-brief.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/ai.openclaw.nova-morning-brief.plist',
+            0)
+    try:
+        plist_text = MORNING_BRIEF_PLIST.read_text(encoding='utf-8')
+        has_7am = '<integer>7</integer>' in plist_text
+        has_0min = '<integer>0</integer>' in plist_text
+        # verify launchd has it loaded
+        ok, out, ms = run(['launchctl', 'list', 'ai.openclaw.nova-morning-brief'], timeout=8)
+        loaded = ok and ('ai.openclaw.nova-morning-brief' in out)
+        good = has_7am and has_0min and loaded
+        # check state file freshness as a soft signal
+        state_path = Path.home() / '.openclaw/state/nova-morning-brief/state.json'
+        state_age = 'unknown'
+        if state_path.exists():
+            try:
+                st=json.loads(state_path.read_text())
+                last=st.get('lastSentAt','')
+                if last:
+                    from datetime import datetime, timezone
+                    dt_last=datetime.fromisoformat(last)
+                    delta_h=(datetime.now(timezone.utc)-dt_last.astimezone(timezone.utc)).total_seconds()/3600
+                    state_age=f"{delta_h:.1f}h ago"
+            except Exception:
+                pass
+        detail=f"loaded={loaded}; 7am={has_7am}; 0min={has_0min}; last_sent={state_age}"
+        return Check('morning_brief.schedule', 'pass' if good else 'warn', detail, int((time.time()-t)*1000))
+    except Exception as e:
+        return Check('morning_brief.schedule', 'warn', f'check error: {e}', int((time.time()-t)*1000))
 
 
 def check_openclaw_health():
@@ -116,9 +154,12 @@ def check_cron_commute():
     try:
         data=json.loads(out)
         jobs=data.get('jobs',[])
-        job=next((j for j in jobs if j.get('name')=='commute:true-digital-park:weekday-0800'), None)
-        if not job:
-            return Check('cron.jobs','warn','commute job not found',ms)
+        commute_jobs=[j for j in jobs if (j.get('name') or '').startswith('commute:')]
+        if not commute_jobs:
+            return Check('cron.jobs','info','no commute job scheduled (expected — removed 2026-05)',ms)
+        job=next((j for j in commute_jobs if j.get('name')=='commute:true-digital-park:weekday-0800'), None)
+        if job is None:
+            job=commute_jobs[0]
         delivery=job.get('delivery') or {}
         msg=((job.get('payload') or {}).get('message') or '')
         sends_status='Send a short morning commute status every weekday' in msg
@@ -126,7 +167,7 @@ def check_cron_commute():
         telegram=delivery.get('channel')=='telegram' and bool(delivery.get('to'))
         enabled=bool(job.get('enabled'))
         good=enabled and telegram and sends_status and no_reply_guard
-        detail=f"enabled={enabled}; telegram={telegram}; daily_status={sends_status}; no_reply_guard={no_reply_guard}"
+        detail=f"name={job.get('name')}; enabled={enabled}; telegram={telegram}; daily_status={sends_status}; no_reply_guard={no_reply_guard}"
         return Check('cron.commute.policy', 'pass' if good else 'warn', detail, ms)
     except Exception as e:
         found=('commute:true-digital-park:weekday-0800' in out) or ('commute:true-digital-' in out and '7953044c-5329-4733-bb88-c42ef22880a6' in out)
@@ -195,6 +236,23 @@ def check_cron_safety_report():
         return Check('cron.safety_report', 'fail', f'bad json: {e}; {out[-300:]}', ms)
 
 
+def check_cron_delivery_audit():
+    ok, out, ms = run([str(SKILL_OS), 'cron-delivery-audit', '--json'], timeout=30)
+    if not ok:
+        return Check('cron.delivery_audit', 'fail', out[-500:], ms)
+    try:
+        data = json.loads(out)
+        if data.get('ok') is True and data.get('mode') == 'report-only':
+            return Check('cron.delivery_audit', 'pass',
+                         f"jobs={data.get('job_count')}; issues={data.get('issue_count', 0)}; mode={data.get('mode')}", ms)
+        if data.get('ok') is False:
+            return Check('cron.delivery_audit', 'warn',
+                         f"jobs={data.get('job_count')}; issues={data.get('issue_count', 0)}", ms)
+        return Check('cron.delivery_audit', 'pass', f"mode={data.get('mode')}; issues={data.get('issue_count', 0)}", ms)
+    except Exception as e:
+        return Check('cron.delivery_audit', 'fail', f'bad json: {e}; {out[-300:]}', ms)
+
+
 def check_memory_fencing_report():
     ok, out, ms = run([str(SKILL_OS), 'memory-fencing', '--json'], timeout=20)
     if not ok:
@@ -220,6 +278,64 @@ def check_tool_loop_guard_report():
         return Check('tool_loop.guard_report', 'pass' if good else 'warn', detail, ms)
     except Exception as e:
         return Check('tool_loop.guard_report', 'fail', f'bad json: {e}; {out[-300:]}', ms)
+
+
+def check_tool_loop_guard_v3():
+    """v3 runtime guard: validates script + scan + thresholds + playbook.
+
+    Pass = script exists, subcommand runs, report has thresholds + v3 playbook
+    reference, and mode is 'report-only'. Will **warn** (not fail) when the
+    report surfaces real violations in the lookback window — the harness keeps
+    recording them but does not block CI.
+    """
+    script = WS / 'nova-skill-os' / 'tool_loop_guard.py'
+    if not script.exists():
+        return Check('tool_loop.guard_v3', 'fail', f'missing {script}', 0)
+    ok, out, ms = run([str(SKILL_OS), 'tool-loop-guard-v3', '--json', '--since-min', '60'], timeout=60)
+    if not ok:
+        return Check('tool_loop.guard_v3', 'fail', out[-500:], ms)
+    try:
+        data = json.loads(out)
+        thresholds = data.get('thresholds') or {}
+        playbook = Path(data.get('playbook', ''))
+        playbook_v12 = Path(data.get('playbook_v12', ''))
+        script_in_report = Path(data.get('script', '')) == script
+        rate_limits = thresholds.get('rate_limits') or {}
+        session_counts = thresholds.get('session_counts') or {}
+        daily_caps = thresholds.get('daily_caps') or {}
+        violations = data.get('violations') or []
+        summary = data.get('summary') or {}
+        # Structural checks (independent of findings)
+        structural_ok = (
+            data.get('mode') == 'report-only'
+            and bool(rate_limits)
+            and bool(session_counts)
+            and bool(daily_caps)
+            and thresholds.get('consecutive_limit', 0) > 0
+            and playbook.exists()
+            and playbook_v12.exists()
+            and script_in_report
+        )
+        # A real scan will usually produce findings; warn (not fail) when present.
+        if not structural_ok:
+            status = 'fail'
+        elif summary.get('by_severity', {}).get('alert', 0) > 0:
+            status = 'warn'
+        else:
+            status = 'pass'
+        detail = (
+            f"mode={data.get('mode')}; rate_limits={len(rate_limits)}; "
+            f"session_counts={len(session_counts)}; daily_caps={len(daily_caps)}; "
+            f"consecutive_limit={thresholds.get('consecutive_limit')}; "
+            f"playbook_v3={'ok' if playbook.exists() else 'missing'}; "
+            f"playbook_v12={'ok' if playbook_v12.exists() else 'missing'}; "
+            f"violations={len(violations)} "
+            f"(alert={summary.get('by_severity', {}).get('alert', 0)}, "
+            f"warn={summary.get('by_severity', {}).get('warn', 0)})"
+        )
+        return Check('tool_loop.guard_v3', status, detail, ms)
+    except Exception as e:
+        return Check('tool_loop.guard_v3', 'fail', f'bad json: {e}; {out[-300:]}', ms)
 
 
 def check_plugin_intake_report():
@@ -401,8 +517,8 @@ def check_action_guard():
 CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
-    check_agentskills_publish_dryrun, check_skill_lifecycle_report, check_skill_profiles_manifest, check_cron_safety_report, check_memory_fencing_report, check_tool_loop_guard_report, check_plugin_intake_report, check_artifact_verifier_report, check_improvement_loop, check_sheets_schema_contract,
-    check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety, check_context_guard, check_action_guard
+    check_agentskills_publish_dryrun, check_skill_lifecycle_report, check_skill_profiles_manifest, check_cron_safety_report, check_cron_delivery_audit, check_memory_fencing_report, check_tool_loop_guard_report, check_tool_loop_guard_v3, check_plugin_intake_report, check_artifact_verifier_report, check_improvement_loop, check_sheets_schema_contract,
+    check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety, check_context_guard, check_action_guard, check_morning_brief_schedule
 ]
 
 
