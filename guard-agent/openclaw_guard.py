@@ -56,6 +56,63 @@ def save_state(state: dict):
     tmp.replace(STATE_FILE)
 
 
+def wait_for_port_free(port: int, timeout: int = 30) -> bool:
+    """Wait for a TCP port to be free (no process bound to it).
+    
+    This solves the restart race condition where the old gateway process
+    hasn't released port 18789 yet when the new instance tries to bind.
+    
+    Returns True if port is free within timeout, False otherwise.
+    """
+    start = time.monotonic()
+    interval = 0.5
+    while time.monotonic() - start < timeout:
+        try:
+            result = subprocess.run(
+                ["lsof", "-i", f":{port}", "-t"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                # No process found using the port
+                return True
+        except Exception:
+            pass
+        time.sleep(interval)
+        interval = min(interval * 1.5, 3.0)
+    # Final check
+    try:
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}", "-t"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return True
+        pids = result.stdout.strip().splitlines()
+        log("port_wait_timeout", port=port, remaining_pids=pids)
+    except Exception as exc:
+        log("port_wait_check_error", error=str(exc))
+    return False
+
+
+def kill_stale_gateway(pid: int) -> None:
+    """Force-kill a stale gateway process that is still holding the port."""
+    try:
+        # First try SIGTERM for graceful shutdown
+        os.kill(pid, 15)  # SIGTERM
+        log("stale_gateway_sigterm_sent", pid=pid)
+        time.sleep(2)
+        # Then SIGKILL if still alive
+        try:
+            os.kill(pid, 9)  # SIGKILL
+            log("stale_gateway_sigkill_sent", pid=pid)
+        except ProcessLookupError:
+            pass  # Process already dead
+    except ProcessLookupError:
+        pass  # Already dead
+    except Exception as exc:
+        log("stale_gateway_kill_error", pid=pid, error=str(exc))
+
+
 def run(cmd: list[str], timeout: int = CMD_TIMEOUT) -> tuple[bool, str]:
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -107,6 +164,36 @@ def restart(service: str, cmd: list[str], reason: str, state: dict):
     if not allowed:
         log("restart_blocked", service=service, reason=reason, policy=why)
         return
+
+    # Special handling for gateway restarts: ensure old process has released the port.
+    if service == "gateway":
+        port = 18789
+        # Check if port is currently in use
+        try:
+            result = subprocess.run(
+                ["lsof", "-i", f":{port}", "-t"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().splitlines()
+                log("port_still_in_use_pre_restart", port=port, pids=pids)
+                # Wait for port to be released
+                if wait_for_port_free(port, timeout=30):
+                    log("port_became_free", port=port)
+                else:
+                    # Force kill stale processes holding the port
+                    log("force_killing_stale_gateway", port=port, pids=pids)
+                    for p in pids:
+                        try:
+                            kill_stale_gateway(int(p))
+                        except ValueError:
+                            pass
+                    # Wait a moment for OS to release port
+                    time.sleep(3)
+                    wait_for_port_free(port, timeout=10)
+        except Exception as exc:
+            log("port_check_error_pre_restart", error=str(exc))
+
     log("restart_start", service=service, reason=reason, command=" ".join(cmd))
     ok, out = run(cmd, timeout=60)
     log("restart_done", service=service, ok=ok, output=out)
