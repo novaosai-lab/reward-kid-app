@@ -41,6 +41,60 @@ def run(cmd: list[str], timeout=20, cwd: Path | None = None):
         return False, str(e), int((time.time()-t)*1000)
 
 
+def check_cron_script_test_coverage():
+    """Soft warn: known unattended cron/launchd scripts should have a sanity test
+    (pytest-style) to catch parser/edge-case bugs before they hit production.
+
+    Convention (from `research/2026-06-16-vibe-coding-sdlc.md`):
+    For every script in the production-script set, there should be a
+    `test_<basename>.py` in the same dir or a `tests/test_<basename>.py`.
+    'vibe' one-off scripts are OK to skip; only scripts that have a `def main(`
+    or `__main__` block are flagged.
+
+    This is a soft WARN, not a hard fail — we want a signal, not a blocker.
+    """
+    t = time.time()
+    production_dirs = [
+        WS / 'discord-alert-forwarder',
+        WS / 'grafana-openclaw-bridge',
+        WS / 'nova-skill-os',
+    ]
+    production_scripts: list[Path] = []
+    for d in production_dirs:
+        if not d.exists():
+            continue
+        for p in sorted(d.glob('*.py')):
+            if p.name.startswith('test_') or p.name.startswith('__'):
+                continue
+            try:
+                text = p.read_text(errors='ignore')
+                if '__main__' in text or 'def main(' in text:
+                    production_scripts.append(p)
+            except Exception:
+                continue
+    if not production_scripts:
+        return Check('cron_scripts.test_coverage', 'warn',
+            'no production scripts found in expected dirs', int((time.time()-t)*1000))
+    untested: list[str] = []
+    for p in production_scripts:
+        candidates = [
+            p.parent / f'test_{p.name}',
+            p.parent / 'tests' / f'test_{p.name}',
+        ]
+        if not any(c.exists() for c in candidates):
+            untested.append(p.relative_to(WS).as_posix())
+    total = len(production_scripts)
+    covered = total - len(untested)
+    if not untested:
+        return Check('cron_scripts.test_coverage', 'pass',
+            f'{total}/{total} production scripts have test files', int((time.time()-t)*1000))
+    sample = ', '.join(untested[:3])
+    more = f' (+{len(untested)-3} more)' if len(untested) > 3 else ''
+    return Check('cron_scripts.test_coverage', 'warn',
+        f'{covered}/{total} covered. Untested: {sample}{more}',
+        int((time.time()-t)*1000))
+
+
 def check_morning_brief_schedule():
     t=time.time()
     if not MORNING_BRIEF_BIN.exists():
@@ -518,7 +572,7 @@ CHECKS: list[Callable[[],Check]] = [
     check_openclaw_health, check_openclaw_status, check_guard, check_dashboard,
     check_voice_state, check_stt, check_tts_dry, check_cron_commute, check_policy,
     check_agentskills_publish_dryrun, check_skill_lifecycle_report, check_skill_profiles_manifest, check_cron_safety_report, check_cron_delivery_audit, check_memory_fencing_report, check_tool_loop_guard_report, check_tool_loop_guard_v3, check_plugin_intake_report, check_artifact_verifier_report, check_improvement_loop, check_sheets_schema_contract,
-    check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety, check_context_guard, check_action_guard, check_morning_brief_schedule
+    check_grafana_dashboard_artifact, check_support_digest_web_data, check_pack_repo_safety, check_context_guard, check_action_guard, check_morning_brief_schedule, check_cron_script_test_coverage
 ]
 
 
