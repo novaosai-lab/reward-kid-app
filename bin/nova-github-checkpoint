@@ -43,7 +43,7 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-blocked_paths="$(git diff --cached --name-only | rg -i '(^|/)(\\.env|.*secret.*|.*token.*|.*credential.*|MEMORY\\.md|USER\\.md|TOOLS\\.md|HEARTBEAT\\.md)$|(^|/)(memory|Nick|logs|tmp|reports|downloads|artifacts)/' || true)"
+blocked_paths="$(git diff --cached --name-only | grep -iE '(^|/)(.env|.*secret.*|.*token.*|.*credential.*|MEMORY\.md|USER\.md|TOOLS\.md|HEARTBEAT\.md)$|(^|/)(memory|Nick|logs|tmp|reports|downloads|artifacts)/' || true)"
 if [[ -n "$blocked_paths" ]]; then
   echo "[blocked] staged paths include private/runtime files:"
   echo "$blocked_paths"
@@ -51,7 +51,7 @@ if [[ -n "$blocked_paths" ]]; then
   exit 2
 fi
 
-secret_hits="$(git diff --cached -- . ':(exclude)package-lock.json' | rg -i '(gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----|(?:api[_-]?key|token|secret|password|passwd)\\s*[:=]\\s*['\''\"]?[A-Za-z0-9_./+=-]{16,})' || true)"
+secret_hits="$(git diff --cached -- . ':(exclude)package-lock.json' | grep -iE '(gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----|(api[_-]?key|token|secret|password|passwd)[[:space:]]*[:=][[:space:]]*[\x27\x22]?[A-Za-z0-9_./+=-]{16,})' || true)"
 if [[ -n "$secret_hits" ]]; then
   echo "[blocked] staged diff matched secret-like patterns"
   git reset --quiet
