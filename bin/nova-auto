@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# nova-auto — CLI wrapper for Nova's auto-executor
+# Usage:
+#   nova-auto list
+#   nova-auto tick
+#   nova-auto state
+#   nova-auto add "Title" --risk low --effort small --category memory --source path/to/file
+#   nova-auto start B-2026-06-21-001
+#   nova-auto complete B-2026-06-21-001 --evidence "did the thing"
+#   nova-auto skip B-2026-06-21-001 --reason "blocked on X"
+#
+set -euo pipefail
+
+EXEC="/Users/nova/.openclaw/workspace/nova-skill-os/auto_executor.py"
+
+if [[ ! -f "$EXEC" ]]; then
+  echo "ERROR: auto_executor.py not found at $EXEC" >&2
+  exit 1
+fi
+
+exec python3 "$EXEC" "$@"
