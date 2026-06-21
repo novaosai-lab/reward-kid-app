@@ -95,3 +95,19 @@ Cron ทำงานทุก 5 นาที, ไม่ต้อง heartbeat �
 - Spawn queue: `~/.openclaw/state/auto-executor/spawn-queue/<id>.json` (audit + replay)
 - Results: `~/.openclaw/state/auto-executor/results/<id>.md` (sub-agent output)
 - Companion notes: `nova-skill-os/backlog.md` (human-readable archive, kept in sync manually)
+
+**Tier 3 + Self-Heal Pipeline (NEW 2026-06-22 02:30):**
+- Cron sub-agent เรียก `bin/nova-self-heal.sh` ก่อน notify
+- Self-heal detects + auto-fixes known failure patterns:
+  - launchagent_silent (LaunchAgent dead) → kickstart -k (idempotent)
+  - cloudflared_dead (process down) → kickstart + verify metrics endpoint
+  - line_bridge_dead → kickstart (KeepAlive now auto-restarts)
+  - envelope_stale (3+ idle runs while backlog has eligible items) → manual tick
+- Capped retry: max 2 heals per pattern per hour (prevents storm)
+- Safe by design: ไม่ลบไฟล์, ไม่แก้ config, ไม่ disable agent, แค่ kickstart + re-run
+- Notify จะรวมทั้ง done/blocked + heal events (1 ข้อความ)
+
+**When to disable temporarily:**
+- ถ้า self-heal misbehaving → `openclaw cron disable 7bb67006-36b2-457d-a50e-2a1ed165857d`
+- ดู heal history: `cat ~/.openclaw/state/auto-executor/heal-state.json`
+- ดู self-heal log: `grep self-heal /Users/nova/.openclaw/workspace/logs/auto-executor-cron.log`

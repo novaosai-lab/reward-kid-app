@@ -128,6 +128,21 @@ Cron job runs the auto-executor every 5 minutes and notifies Nick on Telegram:
 - Manual verify: `openclaw cron runs --id 7bb67006-36b2-457d-a50e-2a1ed165857d --limit 10` (look for `summary: "sent: ok"` vs `"idle: ok"`)
 - Disable temporarily: `openclaw cron disable 7bb67006-36b2-457d-a50e-2a1ed165857d`
 
+**Tier 3 + Self-Heal Pipeline (NEW 2026-06-22 02:30):**
+Cron sub-agent also runs `bin/nova-self-heal.sh` BEFORE notifying — known-failure-pattern auto-recovery:
+- **Patterns supported (v1):**
+  - `launchagent_silent` — LaunchAgent dead → `kickstart -k` (idempotent, mapped job-name → plist-label)
+  - `cloudflared_dead` — process down → kickstart + verify metrics endpoint `http://127.0.0.1:20241/metrics`
+  - `line_bridge_dead` → kickstart (KeepAlive auto-restarts thereafter)
+  - `envelope_stale` — 3+ consecutive idle runs while backlog has eligible items → manual `nova-auto tick`
+- **Capped retry:** max 2 heal attempts per pattern per hour (prevents storm)
+- **Safety:** no deletions, no config changes, no `disable` — only `kickstart -k` + `nova-auto tick` (reversible)
+- **Heal state:** `~/.openclaw/state/auto-executor/heal-state.json` (JSON: heals list + last_reset ISO timestamp)
+- **Heal log:** `grep self-heal /Users/nova/.openclaw/workspace/logs/auto-executor-cron.log`
+- **Verify recovery:** `cat ~/.openclaw/state/auto-executor/heal-state.json | jq .heals` shows recent outcomes
+- **Notify format:** `🔧 self-heal: N attempts, S ok, F failed, C capped` per pattern item
+- **Unknown patterns:** logged + escalated in notify (manual intervention needed)
+
 **Pick rules (enforced inside `auto_executor.py:eligible_items()`):**
 - status=pending AND approval=none AND risk ∈ {low, medium}
 - effort=small → eligible every day (heartbeat/cleanup pattern)
