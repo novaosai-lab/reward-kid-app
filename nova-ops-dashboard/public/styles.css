@@ -354,35 +354,6 @@ button:not(:disabled):hover .refresh-icon {
   padding: 8px 12px;
 }
 
-.sound-toggle {
-  min-width: 92px;
-}
-
-.sound-icon {
-  width: 15px;
-  height: 15px;
-}
-
-.sound-toggle.speaking {
-  color: var(--green);
-  border-color: rgba(0, 255, 170, 0.28);
-  background: rgba(0, 255, 170, 0.06);
-  box-shadow: 0 0 16px rgba(0, 255, 170, 0.18);
-}
-
-.focus-toggle {
-  min-width: 125px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.focus-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
 @keyframes rotate {
   100% { transform: rotate(360deg); }
 }
@@ -534,188 +505,8 @@ main {
 }
 
 /* Cybernetic Roster Map */
-.agent-map {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  background: rgba(2, 4, 10, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.holo-display {
-  --holo-cyan: #00f0ff;
-  --holo-cyan-glow: rgba(0, 240, 255, 0.4);
-  --holo-green: #00ffaa;
-  --holo-green-glow: rgba(0, 255, 170, 0.4);
-  --holo-purple: #8b8cff;
-  --holo-purple-glow: rgba(139, 140, 255, 0.35);
-  --holo-amber: #ff9a00;
-  --holo-amber-glow: rgba(255, 154, 0, 0.55);
-  --holo-rose: #ff4766;
-
-  --holo-theme-cyan: var(--holo-cyan);
-  --holo-theme-cyan-glow: var(--holo-cyan-glow);
-  --holo-theme-green: var(--holo-green);
-  --holo-theme-green-glow: var(--holo-green-glow);
-  --holo-theme-purple: var(--holo-purple);
-
-  --speed-outer: 32s;
-  --speed-mid: 16s;
-  --speed-inner: 8s;
-  --speed-pulse: 2s;
-
-  min-width: 320px;
-  min-height: 440px;
-  padding: 30px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  border-color: rgba(0, 240, 255, 0.18);
-  background:
-    radial-gradient(ellipse at 50% 85%, rgba(0, 240, 255, 0.12) 0%, rgba(0, 240, 255, 0.03) 45%, transparent 75%),
-    linear-gradient(180deg, rgba(2, 6, 12, 0.82) 0%, rgba(1, 3, 7, 0.95) 100%);
-  box-shadow:
-    inset 0 0 30px rgba(0, 240, 255, 0.04),
-    0 12px 36px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-  isolation: isolate;
-  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.holo-display.speaking {
-  border-color: rgba(255, 154, 0, 0.35);
-  background:
-    radial-gradient(ellipse at 50% 85%, rgba(255, 154, 0, 0.15) 0%, rgba(255, 154, 0, 0.04) 45%, transparent 75%),
-    linear-gradient(180deg, rgba(8, 5, 2, 0.85) 0%, rgba(3, 2, 1, 0.96) 100%);
-  box-shadow:
-    inset 0 0 35px rgba(255, 154, 0, 0.08),
-    0 12px 36px rgba(255, 154, 0, 0.08);
-
-  --holo-theme-cyan: var(--holo-amber);
-  --holo-theme-cyan-glow: var(--holo-amber-glow);
-  --holo-theme-green: var(--holo-rose);
-  --holo-theme-green-glow: rgba(255, 71, 102, 0.55);
-  --holo-theme-purple: var(--holo-rose);
-
-  --speed-outer: 8s;
-  --speed-mid: 4s;
-  --speed-inner: 2s;
-  --speed-pulse: 0.6s;
-}
-
-.holo-display::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.35;
-  background:
-    repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.06) 0 1px, transparent 1px 7px),
-    radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.05), transparent 70%);
-  mix-blend-mode: screen;
-  animation: holo-scan 6s linear infinite;
-  transition: all 0.5s ease;
-}
-
-.holo-display.speaking::before {
-  opacity: 0.45;
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 154, 0, 0.08) 0 1px, transparent 1px 5px),
-    radial-gradient(circle at 50% 50%, rgba(255, 154, 0, 0.06), transparent 70%);
-  animation-duration: 2s;
-}
-
-.cyber-bracket {
-  position: absolute;
-  width: 8px;
-  height: 100%;
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  top: 0;
-  z-index: 3;
-}
-.bracket-left { left: 0; border-right: none; border-radius: 4px 0 0 4px; }
-.bracket-right { right: 0; border-left: none; border-radius: 0 4px 4px 0; }
 
 /* Jarvis HUD Diagnostics Overlay */
-.hud-panel {
-  position: absolute;
-  top: 15px;
-  bottom: 30px;
-  width: 100px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 12px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  z-index: 3;
-  pointer-events: none;
-  transition: all 0.5s ease;
-}
-
-.hud-left {
-  left: 20px;
-  align-items: flex-start;
-}
-
-.hud-right {
-  right: 20px;
-  align-items: flex-end;
-}
-
-.hud-data-row {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  border-left: 2px solid rgba(0, 240, 255, 0.15);
-  padding-left: 6px;
-  transition: all 0.5s ease;
-}
-
-.hud-right .hud-data-row {
-  border-left: none;
-  border-right: 2px solid rgba(0, 240, 255, 0.15);
-  padding-left: 0;
-  padding-right: 6px;
-  align-items: flex-end;
-}
-
-.holo-display.speaking .hud-data-row {
-  border-color: rgba(255, 154, 0, 0.3);
-}
-
-.hud-label {
-  color: var(--text-muted);
-  font-size: 8px;
-  letter-spacing: 0.05em;
-}
-
-.hud-val {
-  color: var(--holo-theme-cyan);
-  font-weight: 700;
-  text-shadow: 0 0 6px var(--holo-theme-cyan-glow);
-  transition: color 0.5s ease, text-shadow 0.5s ease;
-}
-
-.holo-stage {
-  position: relative;
-  width: 360px;
-  height: 360px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 2;
-  pointer-events: auto;
-  flex-shrink: 0;
-  margin: 0 10px;
-}
 
 #nova-3d-canvas-container {
   position: absolute;
@@ -725,66 +516,14 @@ main {
 }
 
 /* Holographic Concentric HUD Rings */
-.holo-hud-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid var(--holo-theme-cyan);
-  opacity: 0.25;
-  pointer-events: none;
-  z-index: 1;
-  transition: border-color 0.5s ease, opacity 0.5s ease;
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.05);
-}
-
-.holo-display.speaking .holo-hud-ring {
-  border-color: var(--holo-theme-cyan);
-}
 
 /* Outer ring: dashed, slow rotation */
-.holo-hud-ring.ring-outer {
-  width: 380px;
-  height: 380px;
-  border-style: dashed;
-  border-width: 1.5px;
-  animation: rotate-clockwise 40s linear infinite;
-  opacity: 0.18;
-}
 
 /* Middle ring: double border, medium counter-clockwise rotation */
-.holo-hud-ring.ring-middle {
-  width: 310px;
-  height: 310px;
-  border-style: double;
-  border-width: 3px;
-  animation: rotate-counter 24s linear infinite;
-  opacity: 0.25;
-}
 
 /* Inner ring: dotted, fast clockwise rotation, glow */
-.holo-hud-ring.ring-inner {
-  width: 240px;
-  height: 240px;
-  border-width: 1px;
-  border-style: dotted;
-  animation: rotate-clockwise 12s linear infinite;
-  opacity: 0.4;
-  box-shadow: inset 0 0 20px var(--holo-theme-cyan-glow);
-}
 
 /* Glowing Aura behind Sphere */
-.holo-core-glow {
-  position: absolute;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--holo-theme-cyan-glow) 0%, transparent 70%);
-  filter: blur(16px);
-  opacity: 0.35;
-  z-index: 1;
-  pointer-events: none;
-  animation: aura-pulse 6s ease-in-out infinite alternate;
-  transition: background 0.5s ease;
-}
 
 @keyframes aura-pulse {
   0% { transform: scale(0.9); opacity: 0.25; }
@@ -880,13 +619,6 @@ main {
 }
 
 /* Node wrappers and overlay tags */
-.node-wrapper {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
 
 .node {
   font-family: 'Orbitron', sans-serif;
@@ -933,132 +665,18 @@ main {
   box-shadow: 0 0 20px var(--holo-theme-cyan-glow);
 }
 
-.node-hud-tag {
-  position: absolute;
-  top: -24px;
-  background: rgba(2, 4, 10, 0.72);
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 8px;
-  display: flex;
-  gap: 6px;
-  pointer-events: none;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  transition: all 0.3s ease;
-}
-
-.node-hud-tag::after {
-  content: "";
-  position: absolute;
-  bottom: -5px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px 5px 0;
-  border-style: solid;
-  border-color: rgba(0, 240, 255, 0.25) transparent transparent;
-}
-
-.node-hud-tag span {
-  color: var(--text-muted);
-}
-
-.node-hud-tag strong {
-  color: var(--holo-theme-cyan);
-  text-shadow: 0 0 5px var(--holo-theme-cyan-glow);
-}
-
-.node:hover + .node-hud-tag {
-  transform: translateY(-4px);
-  border-color: var(--holo-theme-cyan);
-}
-
-.node-radar-sweep {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 1px solid rgba(0, 240, 255, 0.2);
-  animation: node-radar-pulse 2s infinite ease-out;
-  pointer-events: none;
-}
-
-.holo-display.speaking .node-radar-sweep {
-  border-color: rgba(255, 154, 0, 0.3);
-}
-
 @keyframes node-radar-pulse {
   0% { transform: scale(1); opacity: 1; }
   100% { transform: scale(1.3); opacity: 0; }
 }
 
-.link-wrapper {
-  position: relative;
-  width: 80px;
-  height: 2px;
-  z-index: 2;
-  flex-shrink: 0;
-}
-
 /* Left link flows from Nova to Sphere */
-.link-wrapper.link-left .link {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, var(--holo-theme-cyan), rgba(0, 240, 255, 0.15));
-  opacity: 0.7;
-}
 
 /* Right link flows from Guard to Sphere */
-.link-wrapper.link-right .link {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(270deg, var(--holo-theme-purple), rgba(0, 240, 255, 0.15));
-  opacity: 0.7;
-}
-
-.connection-wave {
-  position: absolute;
-  top: -4px;
-  left: 0;
-  right: 0;
-  bottom: -4px;
-  border-top: 1px dashed var(--holo-theme-cyan);
-  opacity: 0.35;
-  animation: wave-scrolling 1.2s linear infinite;
-  transition: border-color 0.5s ease;
-}
-
-.link-wrapper.link-right .connection-wave {
-  border-top-color: var(--holo-theme-purple);
-  animation-direction: reverse;
-}
 
 @keyframes wave-scrolling {
   0% { transform: translateX(0); }
   100% { transform: translateX(12px); }
-}
-
-.data-pulse {
-  position: absolute;
-  top: -2px;
-  width: 6px;
-  height: 6px;
-  background: #fff;
-  border-radius: 99px;
-}
-
-.link-left .data-pulse {
-  left: 0;
-  box-shadow: 0 0 8px #fff, 0 0 2px var(--holo-theme-cyan);
-  animation: flow-left-to-right 2s infinite linear;
-}
-
-.link-right .data-pulse {
-  right: 0;
-  left: auto;
-  box-shadow: 0 0 8px #fff, 0 0 2px var(--holo-theme-purple);
-  animation: flow-right-to-left 2.2s infinite linear;
 }
 
 @keyframes flow-left-to-right {
@@ -1075,68 +693,9 @@ main {
   100% { right: 100%; opacity: 0; }
 }
 
-.holo-readout {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 12px;
-  z-index: 3;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.readout-left, .readout-right {
-  display: flex;
-  flex-direction: column;
-}
-
-.readout-right {
-  align-items: flex-end;
-}
-
-.holo-readout strong {
-  color: var(--holo-theme-cyan);
-  font-weight: 700;
-  text-shadow: 0 0 8px var(--holo-theme-cyan-glow);
-  transition: color 0.5s ease, text-shadow 0.5s ease;
-}
-
 /* Voice wave visualizer */
-.voice-visualizer {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 16px;
-  opacity: 0.3;
-  transition: opacity 0.3s ease;
-}
-
-.holo-display.speaking .voice-visualizer {
-  opacity: 1;
-}
-
-.voice-bar {
-  width: 2px;
-  height: 3px;
-  background: var(--holo-theme-cyan);
-  box-shadow: 0 0 6px var(--holo-theme-cyan-glow);
-  border-radius: 99px;
-  transition: background 0.5s ease;
-}
 
 /* Voice wave bounce animations */
-.holo-display.speaking .voice-bar.v-1 { animation: voice-bounce 0.6s ease-in-out infinite alternate; }
-.holo-display.speaking .voice-bar.v-2 { animation: voice-bounce 0.8s ease-in-out infinite alternate 0.1s; }
-.holo-display.speaking .voice-bar.v-3 { animation: voice-bounce 0.5s ease-in-out infinite alternate 0.25s; }
-.holo-display.speaking .voice-bar.v-4 { animation: voice-bounce 0.7s ease-in-out infinite alternate 0.15s; }
-.holo-display.speaking .voice-bar.v-5 { animation: voice-bounce 0.9s ease-in-out infinite alternate 0.05s; }
-.holo-display.speaking .voice-bar.v-6 { animation: voice-bounce 0.6s ease-in-out infinite alternate 0.2s; }
 
 @keyframes voice-bounce {
   0% { height: 3px; transform: scaleY(1); }
@@ -2853,20 +2412,6 @@ main {
   gap: 8px;
 }
 
-.admin-btn {
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 6px;
-  text-align: center;
-  justify-content: center;
-}
-
-.admin-disclaimer {
-  font-size: 11px;
-  line-height: 1.4;
-  margin-top: 8px;
-}
-
 /* Roadmap */
 .tech-list {
   padding-left: 20px;
@@ -3076,48 +2621,6 @@ main {
 }
 
 /* Diagnostic Console Styling */
-.console-card {
-  margin-top: auto;
-}
-
-.console-log-area {
-  background: rgba(2, 4, 10, 0.6);
-  border: 1px solid var(--border-dim);
-  border-radius: 6px;
-  padding: 12px;
-  height: 180px;
-  overflow-y: auto;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  line-height: 1.6;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
-}
-
-.console-line {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  color: #eef6ff;
-  word-break: break-all;
-}
-
-.console-line:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.log-time {
-  color: var(--cyan);
-  flex-shrink: 0;
-  font-weight: 600;
-  text-shadow: 0 0 6px var(--cyan-glow);
-}
-
-.log-msg {
-  color: #dbeafe;
-}
 
 /* Tactical Search Highlight Styling */
 .card {
@@ -3329,90 +2832,14 @@ body.searching .card.has-search-match {
     flex-wrap: wrap;
   }
 
-  .agent-map {
-    width: 100%;
-    margin-top: 16px;
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-    justify-items: center;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 10px 40px !important;
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .holo-display {
-    min-width: 0;
-    min-height: 380px;
-    padding: 20px 16px 36px;
-    gap: 16px;
-  }
-
-  .holo-stage {
-    grid-column: 1 / span 2;
-    grid-row: 1;
-    width: 260px;
-    height: 260px;
-    margin: 0 auto;
-    position: relative;
-    transform: none;
-    left: auto;
-    top: auto;
-    bottom: auto;
-  }
-
   /* Sized-down Concentric HUD Rings on mobile */
-  .holo-hud-ring.ring-outer {
-    width: 270px;
-    height: 270px;
-  }
-  .holo-hud-ring.ring-middle {
-    width: 220px;
-    height: 220px;
-  }
-  .holo-hud-ring.ring-inner {
-    width: 170px;
-    height: 170px;
-  }
 
   /* Sized-down Glowing Aura on mobile */
-  .holo-core-glow {
-    width: 130px;
-    height: 130px;
-    filter: blur(12px);
-  }
-
-  .main-node-wrapper {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .guard-node-wrapper {
-    grid-column: 2;
-    grid-row: 2;
-  }
 
   .node {
     width: 108px;
     height: 72px;
     font-size: 13px;
-  }
-
-  .link-wrapper {
-    display: none !important;
-  }
-
-  .holo-readout {
-    font-size: 8px;
-    left: 12px;
-    right: 12px;
-    bottom: 10px;
-  }
-
-  .hud-panel, .node-hud-tag {
-    display: none;
   }
 
   .app-container {
@@ -3530,78 +2957,7 @@ body.searching .card.has-search-match {
   }
 }
 
-/* Focus Mode CSS Overrides (Motion Reduction) */
-body.focus-mode .holo-hud-ring,
-body.focus-mode .node-radar-sweep,
-body.focus-mode .outer-ticks,
-body.focus-mode .outer-dashed,
-body.focus-mode .outer-dashed-rev,
-body.focus-mode .ring-ticks,
-body.focus-mode .mid-dashed,
-body.focus-mode .inner-ticks,
-body.focus-mode .poly-outer,
-body.focus-mode .poly-inner,
-body.focus-mode .inner-dashed-fast,
-body.focus-mode .hud-mesh,
-body.focus-mode .hud-core {
-  animation-play-state: paused !important;
-}
-
-body.focus-mode .scanline {
-  opacity: 0 !important;
-}
-
-body.focus-mode .holo-core-glow {
-  animation: none !important;
-  opacity: 0.2 !important;
-}
-
-/* Style for active toggle button */
-.top-actions button.focus-toggle.active {
-  background: rgba(0, 255, 170, 0.15) !important;
-  border-color: var(--green) !important;
-  color: var(--green) !important;
-  box-shadow: 0 0 10px rgba(0, 255, 170, 0.2) !important;
-}
-
-.top-actions button.focus-toggle.active:hover {
-  background: rgba(0, 255, 170, 0.25) !important;
-  box-shadow: 0 0 15px rgba(0, 255, 170, 0.4) !important;
-}
-
-.top-actions button.sim-toggle.active {
-  background: rgba(217, 70, 239, 0.15) !important;
-  border-color: #d946ef !important;
-  color: #d946ef !important;
-  box-shadow: 0 0 10px rgba(217, 70, 239, 0.2) !important;
-}
-
-.top-actions button.sim-toggle.active:hover {
-  background: rgba(217, 70, 239, 0.25) !important;
-  box-shadow: 0 0 15px rgba(217, 70, 239, 0.4) !important;
-}
-
 /* Disabled Actions Lock Styling */
-.actions button.admin-btn:disabled {
-  position: relative;
-  cursor: not-allowed;
-  opacity: 0.45;
-  background: rgba(255, 255, 255, 0.02) !important;
-  border-color: rgba(255, 255, 255, 0.05) !important;
-  color: rgba(255, 255, 255, 0.25) !important;
-  padding-left: 28px !important;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.admin-btn-lock-icon {
-  width: 12px;
-  height: 12px;
-  opacity: 0.55;
-  color: var(--rose);
-  vertical-align: middle;
-}
 
 .jobrun-summary {
   display: grid;
@@ -4211,7 +3567,6 @@ body.focus-mode .holo-core-glow {
   letter-spacing: 0;
 }
 
-
 .team-roles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -4452,12 +3807,6 @@ body.focus-mode .holo-core-glow {
   box-shadow: inset 0 0 28px rgba(0, 240, 255, 0.055);
 }
 
-.cockpit-network-panel {
-  position: relative;
-  min-height: 390px;
-  overflow: hidden;
-}
-
 .cockpit-panel-header {
   display: block;
   margin: 0 0 10px;
@@ -4504,15 +3853,6 @@ body.focus-mode .holo-core-glow {
   text-transform: uppercase;
 }
 
-.team-agent-network {
-  position: absolute;
-  inset: 0;
-  min-height: 320px;
-  background:
-    radial-gradient(circle at center, rgba(0, 240, 255, 0.11), transparent 43%),
-    linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.5));
-}
-
 .team-agent-network canvas {
   display: block;
   width: 100% !important;
@@ -4533,17 +3873,6 @@ body.focus-mode .holo-core-glow {
   z-index: 5;
 }
 
-.cockpit-network-footer {
-  position: absolute;
-  z-index: 3;
-  left: 14px;
-  right: 14px;
-  bottom: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .cockpit-overview-panel {
   padding: 14px;
 }
@@ -4559,13 +3888,6 @@ body.focus-mode .holo-core-glow {
 
 .cockpit-route-card {
   padding: 12px;
-}
-
-.cockpit-analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-  gap: 14px;
-  margin-top: 14px;
 }
 
 .cockpit-runtime-grid {
@@ -5586,17 +4908,6 @@ body.focus-mode .holo-core-glow {
   font-size: 10px;
 }
 
-.cockpit-mini-map {
-  position: relative;
-  height: 154px;
-  border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgba(0, 240, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(0, 240, 255, 0.07) 1px, transparent 1px),
-    radial-gradient(circle at center, rgba(0, 240, 255, 0.12), rgba(2, 6, 23, 0.42));
-  background-size: 32px 32px, 32px 32px, 100% 100%;
-}
-
 .cockpit-mini-map i {
   position: absolute;
   left: var(--x);
@@ -5785,10 +5096,6 @@ body.focus-mode .holo-core-glow {
     padding: 10px;
   }
 
-  .cockpit-network-panel {
-    min-height: 360px;
-  }
-
   .cockpit-command-bar {
     grid-template-columns: 1fr;
   }
@@ -5835,7 +5142,6 @@ body.focus-mode .holo-core-glow {
   .verification-card-head {
     grid-template-columns: 1fr;
   }
-
 
 /* Memory Note and Cyber Select styles */
 .memory-selector-row {
@@ -5948,79 +5254,6 @@ body.focus-mode .holo-core-glow {
 }
 
 /* Processing / Running Task UI Animations */
-.holo-display.processing .holo-hud-ring.ring-outer {
-  animation-duration: 10s;
-  border-color: var(--holo-theme-purple);
-  box-shadow: 0 0 25px rgba(217, 70, 239, 0.15);
-}
-
-.holo-display.processing .holo-hud-ring.ring-middle {
-  animation-duration: 6s;
-  border-color: var(--holo-theme-purple);
-}
-
-.holo-display.processing .holo-hud-ring.ring-inner {
-  animation-duration: 3s;
-  border-color: var(--holo-theme-purple);
-  box-shadow: inset 0 0 30px rgba(217, 70, 239, 0.2);
-}
-
-.holo-display.processing .holo-core-glow {
-  background: radial-gradient(circle, rgba(217, 70, 239, 0.5) 0%, transparent 70%);
-  animation-duration: 1.5s;
-}
-
-.holo-display.processing .node.main {
-  border-color: #d946ef;
-  box-shadow: 0 0 25px rgba(217, 70, 239, 0.35);
-  animation: processing-glow 1.5s infinite alternate ease-in-out;
-}
-
-.holo-display.processing .node.main small {
-  color: #d946ef;
-  font-weight: 700;
-  text-shadow: 0 0 5px rgba(217, 70, 239, 0.5);
-}
-
-.holo-display.processing .node-hud-tag.tag-left {
-  border-color: #d946ef;
-}
-
-.holo-display.processing .node-hud-tag.tag-left strong {
-  color: #d946ef;
-  text-shadow: 0 0 8px rgba(217, 70, 239, 0.5);
-}
-
-.holo-display.processing .link-left .link {
-  background: linear-gradient(90deg, #d946ef, rgba(217, 70, 239, 0.15));
-}
-
-.holo-display.processing .link-left .connection-wave {
-  border-top-color: #d946ef;
-  animation-duration: 0.4s;
-}
-
-.holo-display.processing .link-left .data-pulse {
-  animation-duration: 0.5s;
-  background: #fff;
-  box-shadow: 0 0 10px #fff, 0 0 4px #d946ef;
-}
-
-.holo-display.processing .voice-visualizer {
-  opacity: 1;
-}
-
-.holo-display.processing .voice-bar {
-  background: #d946ef;
-  box-shadow: 0 0 8px rgba(217, 70, 239, 0.6);
-}
-
-.holo-display.processing .voice-bar.v-1 { animation: voice-bounce 0.4s ease-in-out infinite alternate; }
-.holo-display.processing .voice-bar.v-2 { animation: voice-bounce 0.6s ease-in-out infinite alternate 0.05s; }
-.holo-display.processing .voice-bar.v-3 { animation: voice-bounce 0.3s ease-in-out infinite alternate 0.15s; }
-.holo-display.processing .voice-bar.v-4 { animation: voice-bounce 0.5s ease-in-out infinite alternate 0.1s; }
-.holo-display.processing .voice-bar.v-5 { animation: voice-bounce 0.7s ease-in-out infinite alternate 0.02s; }
-.holo-display.processing .voice-bar.v-6 { animation: voice-bounce 0.4s ease-in-out infinite alternate 0.08s; }
 
 @keyframes processing-glow {
   0% { transform: scale(1); box-shadow: 0 0 15px rgba(217, 70, 239, 0.2); }
@@ -6122,10 +5355,6 @@ body.focus-mode .holo-core-glow {
 }
 
 /* Global Mini Map Scanner Sweep */
-.cockpit-mini-map {
-  overflow: hidden;
-  border: 1px solid rgba(0, 240, 255, 0.08);
-}
 
 .cockpit-mini-map::after {
   content: "";
@@ -7068,10 +6297,7 @@ body.focus-mode .holo-core-glow {
     grid-template-columns: 2fr 1fr !important;
     height: auto !important;
   }
-  #subtab-workbench .cockpit-network-panel {
-    grid-column: 1 / -1 !important;
-    min-height: 580px !important;
-  }
+  #subtab-workbench
   #subtab-workbench .cockpit-console-panel {
     grid-column: 1 !important;
     height: 380px !important;
@@ -7082,7 +6308,26 @@ body.focus-mode .holo-core-glow {
   }
 }
 @media (max-width: 1180px) {
-  #subtab-workbench .cockpit-network-panel {
-    min-height: 480px !important;
-  }
+  #subtab-workbench
+}
+
+/* v1.13 — hero-compact: simplified hero (no big HUD map underneath) */
+.hero-compact {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.hero-compact .hero-content { padding: 0; }
+.hero-compact .eyebrow { margin-bottom: 6px; }
+.hero-compact .status-line { font-size: 18px; }
+
+/* Sub-section header inside Service Health card */
+.section-subhead {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(169, 244, 95, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #7d8a99;
+  text-transform: uppercase;
 }

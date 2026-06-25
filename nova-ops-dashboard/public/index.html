@@ -8,9 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1.12" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://unpkg.com/vis-network@10.1.0/standalone/umd/vis-network.min.js"></script>
+  <link rel="stylesheet" href="styles.css?v=1.16" />
 </head>
 <body>
   <!-- Sci-Fi Ambient Backdrops -->
@@ -22,7 +20,7 @@
     <aside class="sidebar" aria-label="Tactical Navigation">
       <div class="brand">
         <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
-        <h1>Nova Ops <span class="version-badge">v1.7</span></h1>
+        <h1>Nova Ops <span class="version-badge">v1.16</span></h1>
       </div>
 
       <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
@@ -51,16 +49,6 @@
           <span class="tab-icon">⏱</span>
           <span>Jobs & Runs</span>
         </button>
-        <button class="tab-btn" data-tab="life">
-          <span class="tab-glow"></span>
-          <span class="tab-icon">☑</span>
-          <span>Life Command</span>
-        </button>
-        <button class="tab-btn" data-tab="commands">
-          <span class="tab-glow"></span>
-          <span class="tab-icon">⌘</span>
-          <span>Commands</span>
-        </button>
         <button class="tab-btn" data-tab="memory">
           <span class="tab-glow"></span>
           <span class="tab-icon">🧠</span>
@@ -70,11 +58,6 @@
           <span class="tab-glow"></span>
           <span class="tab-icon">⚙️</span>
           <span>System Docs</span>
-        </button>
-        <button class="tab-btn" data-tab="architecture">
-          <span class="tab-glow"></span>
-          <span class="tab-icon">🕸️</span>
-          <span>Architecture</span>
         </button>
       </nav>
 
@@ -108,18 +91,6 @@
             <span id="updated" class="status-timestamp">Loading…</span>
             <span id="status-freshness" class="freshness loading">Checking freshness</span>
           </div>
-          <button id="focus-toggle" class="icon-btn focus-toggle" type="button" title="Toggle Focus Mode (Reduce Motion)" aria-label="Toggle Focus Mode (Reduce Motion)">
-            <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; transform: scale(1.1);"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
-            <span>Focus Mode</span>
-          </button>
-          <button id="sim-toggle" class="icon-btn sim-toggle" type="button" title="Toggle processing visual animation simulation">
-            <svg class="sim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; transform: scale(1.1);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            <span>Simulate Run</span>
-          </button>
-          <button id="sound-toggle" class="icon-btn sound-toggle" type="button" title="Play Nova introduction">
-            <svg class="sound-icon sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 5a9 9 0 0 1 0 14"></path></svg>
-            <span>Intro</span>
-          </button>
           <button id="refresh">
             <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
             Sync Telemetry
@@ -130,107 +101,12 @@
       <main>
     <!-- Tab Panel: Core Telemetry -->
     <div id="tab-telemetry" class="tab-panel active">
-        <section class="hero card glow-cyan">
+        <section class="hero card glow-cyan hero-compact">
           <div class="hero-content">
             <div class="eyebrow">Overall Posture</div>
             <div class="status-line">
               <span id="overall-dot" class="dot loading"></span>
               <span id="overall">Collecting Telemetry</span>
-            </div>
-            <p>Operational command center for verified gateway health, guard events, alert pathways, workflow evidence, and incident candidates. Secure read-only posture is active.</p>
-          </div>
-
-          <div class="agent-map holo-display" aria-label="Holographic OpenClaw agent display">
-            <!-- Sci-fi Corner Brackets -->
-            <div class="cyber-bracket bracket-left"></div>
-            <div class="cyber-bracket bracket-right"></div>
-
-            <!-- Jarvis HUD Diagnostics Overlay (Left side) -->
-            <div class="hud-panel hud-left" aria-hidden="true">
-              <div class="hud-data-row"><span class="hud-label">LOC</span><span class="hud-val">BK_TH:SYS</span></div>
-              <div class="hud-data-row"><span class="hud-label">COORDS</span><span class="hud-val">13.75N / 100.50E</span></div>
-              <div class="hud-data-row"><span class="hud-label">PING</span><span class="hud-val">NOT WIRED</span></div>
-              <div class="hud-data-row"><span class="hud-label">CPU_LOAD</span><span class="hud-val">NOT WIRED</span></div>
-            </div>
-
-            <!-- Jarvis HUD Diagnostics Overlay (Right side) -->
-            <div class="hud-panel hud-right" aria-hidden="true">
-              <div class="hud-data-row"><span class="hud-label">STATUS</span><span class="hud-val text-green">ONLINE</span></div>
-              <div class="hud-data-row"><span class="hud-label">NODE_ID</span><span class="hud-val">N_040D_X</span></div>
-              <div class="hud-data-row"><span class="hud-label">MEM_USE</span><span class="hud-val">NOT WIRED</span></div>
-              <div class="hud-data-row"><span class="hud-label">SECURE</span><span class="hud-val text-cyan">R_ONLY</span></div>
-            </div>
-
-            <!-- Agent Node Grid (Main Worker and Guard Watchdog) -->
-            <div class="node-wrapper main-node-wrapper">
-              <div class="node main">
-                <span class="node-glow"></span>
-                <div class="node-radar-sweep"></div>
-                Nova
-                <small>Main Worker</small>
-              </div>
-              <!-- Node Tag HUD overlay -->
-              <div class="node-hud-tag tag-left">
-                <span>CORE_ENG</span>
-                <strong>SYS_OK</strong>
-              </div>
-            </div>
-
-            <div class="link-wrapper link-left">
-              <div class="link"></div>
-              <span class="data-pulse"></span>
-              <span class="connection-wave"></span>
-            </div>
-
-            <div class="holo-stage" aria-hidden="true" style="pointer-events: auto;">
-              <!-- Holographic Rotating Concentric HUD Rings -->
-              <div class="holo-hud-ring ring-outer"></div>
-              <div class="holo-hud-ring ring-middle"></div>
-              <div class="holo-hud-ring ring-inner"></div>
-              <!-- Glowing Aura behind Sphere -->
-              <div class="holo-core-glow"></div>
-              <div id="nova-3d-canvas-container" style="width: 100%; height: 100%;"></div>
-            </div>
-
-            <div class="link-wrapper link-right">
-              <div class="link"></div>
-              <span class="data-pulse"></span>
-              <span class="connection-wave"></span>
-            </div>
-
-            <div class="node-wrapper guard-node-wrapper">
-              <div class="node guard">
-                <span class="node-glow"></span>
-                <div class="node-radar-sweep"></div>
-                Guard
-                <small>Admin Watchdog</small>
-              </div>
-              <!-- Node Tag HUD overlay -->
-              <div class="node-hud-tag tag-right">
-                <span>SND_WDG</span>
-                <strong>ACTIVE</strong>
-              </div>
-            </div>
-
-            <!-- Bottom Holographic Readout & Audio Visualizer -->
-            <div class="holo-readout" aria-hidden="true">
-              <div class="readout-left">
-                <span>Visual Core</span>
-                <strong>STATUS-BOUND ONLY</strong>
-              </div>
-              <!-- Speaking Voice visualizer wave -->
-              <div class="voice-visualizer">
-                <span class="voice-bar v-1"></span>
-                <span class="voice-bar v-2"></span>
-                <span class="voice-bar v-3"></span>
-                <span class="voice-bar v-4"></span>
-                <span class="voice-bar v-5"></span>
-                <span class="voice-bar v-6"></span>
-              </div>
-              <div class="readout-right">
-                <span>POSTURE</span>
-                <strong class="text-cyan">READ_ONLY</strong>
-              </div>
             </div>
           </div>
         </section>
@@ -259,9 +135,11 @@
           <div class="card card-tech">
             <div class="section-head">
               <h2>Service Health</h2>
-              <span>Gateway · Node · Guard · Channels</span>
+              <span>Gateway · Node · Guard</span>
             </div>
             <div id="services" class="service-list"></div>
+            <div class="section-subhead">Channels</div>
+            <div id="channels" class="chips"></div>
           </div>
 
           <div class="card card-tech" data-nova-id="alert-routes">
@@ -290,45 +168,6 @@
         </div>
 
         <div class="right">
-          <div class="card card-tech">
-            <div class="section-head">
-              <h2>Channels</h2>
-              <span>Telegram / Discord</span>
-            </div>
-            <div id="channels" class="chips"></div>
-          </div>
-
-          <div class="card card-tech">
-            <div class="section-head">
-              <h2>Admin Actions</h2>
-              <span>Disabled Until Explicit Safety Layer</span>
-            </div>
-            <div class="actions">
-              <button disabled class="admin-btn">
-                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Restart Gateway
-              </button>
-              <button disabled class="admin-btn">
-                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Restart Node
-              </button>
-              <button disabled class="admin-btn">
-                <svg class="admin-btn-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Run Deep Audit
-              </button>
-            </div>
-            <p class="muted admin-disclaimer">Next version can add actions with confirmation, auth token, rate limits and full audit logging.</p>
-          </div>
-
-          <div class="card card-tech console-card">
-            <div class="section-head">
-              <h2>Diagnostic Console</h2>
-              <span>Live System Stream</span>
-            </div>
-            <div class="console-log-area" id="diagnostic-console">
-              <div class="console-line"><span class="log-time">[SYSTEM]</span> <span class="log-msg">Nova Command Interface initialized.</span></div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -530,32 +369,6 @@
       </div>
     </div>
 
-    <!-- Tab Panel: Life Command Center -->
-    <div id="tab-life" class="tab-panel">
-      <div class="layout-grid-2">
-        <div class="card card-tech col-span-2" data-nova-id="life-command">
-          <div class="section-head">
-            <h2>Personal Command Center</h2>
-            <span>LINE Intake · Daily Life Brief · Local Preview</span>
-          </div>
-          <div id="life-command" class="life-command"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab Panel: Commands -->
-    <div id="tab-commands" class="tab-panel">
-      <div class="layout-grid-2">
-        <div class="card card-tech col-span-2" data-nova-id="command-cheatsheet">
-          <div class="section-head">
-            <h2>Command Cheatsheet</h2>
-            <span>OpenClaw · Grafana · Git · Docker · Local Ops</span>
-          </div>
-          <div id="command-cheatsheet" class="command-cheatsheet"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- Tab Panel: Daily Memory Notes -->
     <div id="tab-memory" class="tab-panel">
       <div class="layout">
@@ -624,29 +437,11 @@
       </div>
     </div>
 
-    <!-- Tab Panel: Architecture Call-Flow -->
-    <div id="tab-architecture" class="tab-panel">
-      <div class="layout-grid-1">
-        <div class="card card-tech glow-cyan" style="min-height: 650px; display: flex; flex-direction: column;">
-          <div class="section-head">
-            <h2>Interactive Call-Flow Mapping</h2>
-            <span>Local AST codebase structure and relationships</span>
-          </div>
-          <div id="architecture-network" style="flex: 1; width: 100%; height: 550px; border-radius: 8px; background: rgba(2, 4, 10, 0.4); margin-top: 15px; position: relative;"></div>
-          <div class="architecture-legend" style="display: flex; gap: 15px; margin-top: 10px; font-size: 11px; color: var(--text-muted);">
-            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #00f0ff; margin-right: 5px;"></span>File</div>
-            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #a78bfa; margin-right: 5px;"></span>Function</div>
-            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #34d399; margin-right: 5px;"></span>Class</div>
-            <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #fb923c; margin-right: 5px;"></span>Dependency</div>
-          </div>
-        </div>
-      </div>
-    </div>
   </main>
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
 
-  <script src="app.js?v=1.12" defer></script>
+  <script src="app.js?v=1.16" defer></script>
 
   <!-- Interactive Command Center Scripts -->
   <script>
@@ -705,11 +500,7 @@
           if (typeof playCommandSound === 'function') {
             playCommandSound('confirm');
           }
-
-          appendConsoleLog(`Switched view to segment: [${targetTab.toUpperCase()}]`);
-          if (targetTab === 'architecture' && typeof window.redrawArchitecture === 'function') {
-            setTimeout(window.redrawArchitecture, 50);
-          }
+        });
         });
       });
 
@@ -748,74 +539,8 @@
             playCommandSound('confirm');
           }
 
-          appendConsoleLog(`HUD Color Profile re-skinned to: [${theme.toUpperCase()}]`);
-        });
+          // (Diagnostic Console removed in v1.14 — see memory)
       });
-
-      // Focus Mode Toggle Controller (Reduce Motion & Visual Fatigue)
-      const focusToggle = document.getElementById('focus-toggle');
-      let isFocusMode = localStorage.getItem('nova-ops-focus-mode') === 'true';
-
-      const applyFocusMode = (active) => {
-        if (active) {
-          document.body.classList.add('focus-mode');
-          if (focusToggle) focusToggle.classList.add('active');
-          appendConsoleLog("Focus Mode: ACTIVE (Visual animations and rotations reduced).");
-        } else {
-          document.body.classList.remove('focus-mode');
-          if (focusToggle) focusToggle.classList.remove('active');
-          appendConsoleLog("Focus Mode: INACTIVE (Full operational animations restored).");
-        }
-        localStorage.setItem('nova-ops-focus-mode', active);
-      };
-
-      // Apply initial Focus Mode state
-      applyFocusMode(isFocusMode);
-
-      if (focusToggle) {
-        focusToggle.addEventListener('click', () => {
-          isFocusMode = !isFocusMode;
-          applyFocusMode(isFocusMode);
-          if (typeof playCommandSound === 'function') {
-            playCommandSound('confirm');
-          }
-        });
-      }
-
-      // Live Diagnostic Console log stream controller
-      function esc(x) {
-        return String(x ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-      }
-
-      function appendConsoleLog(msg) {
-        const consoleEl = document.getElementById('diagnostic-console');
-        if (!consoleEl) return;
-        const time = new Date().toLocaleTimeString();
-        const logLine = document.createElement('div');
-        logLine.className = 'console-line';
-        logLine.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${esc(msg)}</span>`;
-        consoleEl.appendChild(logLine);
-        consoleEl.scrollTop = consoleEl.scrollHeight;
-
-        while (consoleEl.children.length > 25) {
-          consoleEl.removeChild(consoleEl.firstChild);
-        }
-      }
-      window.appendConsoleLog = appendConsoleLog; // Expose globally for app.js triggers
-
-      // Populate only interface lifecycle logs; operational claims arrive from API results in app.js.
-      setTimeout(() => {
-        appendConsoleLog("Command interface initialized in read-only mode.");
-        appendConsoleLog("Telemetry auto-refresh configured (30s interval).");
-      }, 1000);
-
-      // Add log when click Sync Telemetry
-      const refreshBtn = document.getElementById('refresh');
-      if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
-          appendConsoleLog("Force synchronization requested by user. Dispatching queries...");
-        });
-      }
 
       // Search & Filtering Controller
       const searchInput = document.getElementById('search-input');
@@ -905,9 +630,7 @@
           // Debounced logging of search query
           if (q) {
             clearTimeout(logTimeout);
-            logTimeout = setTimeout(() => {
-              appendConsoleLog(`Tactical scan complete for "${q}". Matches: ${matchedCount}`);
-            }, 600);
+            // (Diagnostic Console removed in v1.14 — see memory)
           }
         });
       }
