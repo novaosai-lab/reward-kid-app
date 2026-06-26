@@ -1,0 +1,20 @@
+{
+  "agents": [
+    {
+      "id": "nova",
+      "name": "Nova",
+      "role": "Executive Assistant",
+      "type": "ai",
+      "status": "active",
+      "runtime": "openclaw",
+      "heartbeat_sec": 300
+    },
+    {
+      "id": "nick",
+      "name": "Nick",
+      "role": "Owner",
+      "type": "human",
+      "status": "active"
+    }
+  ]
+}
