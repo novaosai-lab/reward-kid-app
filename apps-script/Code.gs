@@ -31,8 +31,15 @@ function handleRequest_(e) {
   lock.tryLock(10000);
   try {
     const ss = SpreadsheetApp.openById(SHEET_ID);
-    const body = e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    const action = (e.parameter && e.parameter.action) || body.action || 'list_all';
+    // Support BOTH GET (query params) and POST (JSON body).
+    // Apps Script Web App redirects POST -> GET, so POST body is unreliable from client-side fetch.
+    const body = {};
+    if (e.postData && e.postData.contents) {
+      try { Object.assign(body, JSON.parse(e.postData.contents)); } catch (_) {}
+    }
+    const params = e.parameter || {};
+    Object.keys(params).forEach(k => { if (!(k in body)) body[k] = params[k]; });
+    const action = body.action || 'list_all';
 
     let result;
     switch (action) {

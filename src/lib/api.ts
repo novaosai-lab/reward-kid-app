@@ -5,15 +5,18 @@ import type { AppData, Task, Reward, Log } from './types';
 
 const URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || '';
 
+// Apps Script Web App redirects POST→GET, so we use GET + query params.
+// This is the documented Google Apps Script pattern for client-side fetch.
 async function call<T = any>(action: string, body: Record<string, any> = {}): Promise<T> {
   if (!URL) {
     throw new Error('NEXT_PUBLIC_APPS_SCRIPT_URL not set — see apps-script/README.md');
   }
-  const res = await fetch(URL, {
-    method: 'POST',
-    // Apps Script requires text/plain to avoid CORS preflight
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, ...body }),
+  const params = new URLSearchParams({ action, ...Object.fromEntries(
+    Object.entries(body).map(([k, v]) => [k, String(v ?? '')])
+  ) });
+  const res = await fetch(`${URL}?${params.toString()}`, {
+    method: 'GET',
+    redirect: 'follow',
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
