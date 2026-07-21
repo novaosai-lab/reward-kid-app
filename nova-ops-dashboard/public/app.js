@@ -263,9 +263,26 @@ function renderWeb(web) {
 }
 
 function renderAlerts(alerts) {
+  const metrics = alerts.metrics || {};
   setHtml('alert-routes', (alerts.items || []).map(item => {
     const statusPill = pill(item.status).replace(label(item.status), esc(item.statusLabel || label(item.status)));
-    return '<article class="alert-route"><div class="alert-route-head"><div><strong>' + esc(item.name) + '</strong><span>' + esc(item.destination) + '</span></div>' + statusPill + '</div><div class="alert-route-flow"><span>' + esc(item.source) + '</span><b>→</b><span>' + esc(item.trigger) + '</span></div><div class="web-meta"><span>' + esc(item.evidence) + '</span></div><div class="detail">' + esc(item.note) + '</div></article>';
+    // Build metric chips from metrics dict (keyed by route name slug)
+    const slug = (item.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const m = metrics[slug] || metrics[item.name] || null;
+    let metricsHtml = '';
+    if (m && m.last_sent_at) {
+      const age = m.age_min != null ? (m.age_min < 60 ? m.age_min + 'm ago' : Math.floor(m.age_min / 60) + 'h ago') : '—';
+      const errClass = m.last_error ? ' alert-metric-warn' : '';
+      metricsHtml = '<div class="alert-metrics">' +
+        '<span class="alert-metric">last sent: <strong>' + esc(age) + '</strong></span>' +
+        '<span class="alert-metric">count: <strong>' + esc(String(m.last_sent_count ?? 0)) + '</strong></span>' +
+        (m.last_status ? '<span class="alert-metric">status: <strong>' + esc(m.last_status) + '</strong></span>' : '') +
+        (m.last_error ? '<span class="alert-metric' + errClass + '">last err: <strong>' + esc(m.last_error) + '</strong></span>' : '') +
+        '</div>';
+    } else {
+      metricsHtml = '<div class="alert-metrics"><span class="alert-metric alert-metric-muted">no live activity data</span></div>';
+    }
+    return '<article class="alert-route"><div class="alert-route-head"><div><strong>' + esc(item.name) + '</strong><span>' + esc(item.destination) + '</span></div>' + statusPill + '</div><div class="alert-route-flow"><span>' + esc(item.source) + '</span><b>→</b><span>' + esc(item.trigger) + '</span></div><div class="web-meta"><span>' + esc(item.evidence) + '</span></div>' + metricsHtml + '<div class="detail">' + esc(item.note) + '</div></article>';
   }).join('') || '<p class="muted">No alert routes configured.</p>');
 }
 

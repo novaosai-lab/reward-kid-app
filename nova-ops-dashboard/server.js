@@ -1248,6 +1248,70 @@ async function collectTelegramHealth() {
   };
 }
 
+/**
+ * collectAlertMetrics — read live activity from state files for alert routes
+ * that have them. Returns {<route_id>: {last_sent_at, last_sent_count, last_count, last_error, source_file}}
+ * Falls back to {} for routes that don't have a state file.
+ */
+async function collectAlertMetrics() {
+  const result = {};
+  const tz = (ms) => ms ? new Date(ms).toISOString() : null;
+  const ageMin = (iso) => iso ? Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000)) : null;
+
+  // team-leave gogcli (Google Chat) — has .leave-chat-notify-state.json
+  try {
+    const f = path.join(WORKSPACE, 'team-leave-management', '.leave-chat-notify-state.json');
+    const raw = JSON.parse(await fsp.readFile(f, 'utf8'));
+    if (raw.last_sent_at) {
+      result['team-leave-gogcli'] = {
+        last_sent_at: raw.last_sent_at,
+        last_sent_count: raw.last_count ?? 0,
+        count_today: raw.last_count ?? 0, // same date → count_today = last_count
+        last_error: null,
+        source_file: 'team-leave-management/.leave-chat-notify-state.json',
+        age_min: ageMin(raw.last_sent_at)
+      };
+    }
+  } catch {}
+
+  // Discord prod-order forwarder — has prod-order-monitor-state.json + launcher watchdog state
+  try {
+    const f = path.join(process.env.HOME, '.openclaw', 'state', 'discord-alert-forwarder', 'prod-order-monitor-state.json');
+    const raw = JSON.parse(await fsp.readFile(f, 'utf8'));
+    if (raw.last_run) {
+      result['discord-prod-order'] = {
+        last_sent_at: tz(raw.last_run * 1000),
+        last_sent_count: raw.last_sent_count ?? 0,
+        count_today: raw.dedupe ? Object.keys(raw.dedupe).length : 0, // approximate
+        last_error: null,
+        source_file: '~/.openclaw/state/discord-alert-forwarder/prod-order-monitor-state.json',
+        age_min: ageMin(tz(raw.last_run * 1000))
+      };
+    }
+  } catch {}
+
+  // Launcher watchdog state — has coupon-points-issue-alert + discord-prod-order-forwarder
+  try {
+    const f = path.join(process.env.HOME, '.openclaw', 'state', 'launcher-watchdog', 'state.json');
+    const raw = JSON.parse(await fsp.readFile(f, 'utf8'));
+    for (const [key, data] of Object.entries(raw || {})) {
+      if (!data || !data.last_alert_ts) continue;
+      const routeId = key === 'coupon-points-issue-alert' ? 'coupon-points-issue' : key;
+      result[routeId] = {
+        last_sent_at: tz(data.last_alert_ts * 1000),
+        last_sent_count: 1, // each alert is a single send
+        count_today: 0, // can't compute without date — leave 0
+        last_error: data.last_error_seen_ts ? tz(data.last_error_seen_ts * 1000) : null,
+        source_file: '~/.openclaw/state/launcher-watchdog/state.json',
+        last_status: data.last_status || null,
+        age_min: ageMin(tz(data.last_alert_ts * 1000))
+      };
+    }
+  } catch {}
+
+  return result;
+}
+
 async function collectAlertRoutes() {
   const [openclawStatus, launchAgents] = await Promise.all([
     run(OPENCLAW, ['status'], 25000),
@@ -3682,7 +3746,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/alert-routes') {
-    try { send(res, 200, 'application/json', JSON.stringify(await cached('alert-routes', TTL.alertRoutes, collectAlertRoutes, url.searchParams.get('refresh') === '1'))); }
+    try {
+      const merged = await cached('alert-routes', TTL.alertRoutes, async () => {
+        const [items, metrics] = await Promise.all([collectAlertRoutes(), collectAlertMetrics()]);
+        return { generatedAt: new Date().toISOString(), items, metrics };
+      }, url.searchParams.get('refresh') === '1');
+      send(res, 200, 'application/json', JSON.stringify(merged));
+    }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }

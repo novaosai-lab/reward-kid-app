@@ -7121,3 +7121,10 @@ body.searching .card.has-search-match {
 .modal-events { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
 .modal-events .timeline-item { padding: 8px 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border-left: 2px solid rgba(0,240,255,0.4); }
 .modal-events .timeline-item .detail { font-size: 12px; color: #8b96a3; margin-top: 4px; }
+
+/* === Alert Route Metrics (Patch 2) === */
+.alert-metrics { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); }
+.alert-metric { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: rgba(0,240,255,0.08); color: rgba(255,255,255,0.85); border: 1px solid rgba(0,240,255,0.2); font-family: 'JetBrains Mono', monospace; }
+.alert-metric strong { color: #fff; font-weight: 600; margin-left: 4px; }
+.alert-metric-muted { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); font-style: italic; }
+.alert-metric-warn { background: rgba(255,180,0,0.1); border-color: rgba(255,180,0,0.3); color: rgba(255,200,80,0.95); }
