@@ -124,7 +124,7 @@ function bars(items) {
 function renderFastStatus(d) {
   const ageMs = Date.now() - Date.parse(d.generatedAt);
   const stale = Boolean(d.stale) || ageMs > 60000;
-  $('updated').textContent = new Date(d.generatedAt).toLocaleString() + (d.cached ? ' · cached' : '');
+  $('updated').textContent = new Date(d.generatedAt).toLocaleString();
   setHtml('status-freshness', `${stale ? 'STALE' : 'FRESH'} · ${esc(ageLabel(ageMs))}`);
   $('status-freshness').className = `freshness ${stale ? 'warning' : 'healthy'}`;
   $('overall').textContent = d.overall === 'healthy' ? 'Core systems online' : d.overall === 'critical' ? 'Critical attention required' : 'Watch items detected';
@@ -133,20 +133,97 @@ function renderFastStatus(d) {
   $('m-tasks').textContent = d.summary.tasks;
   $('m-heartbeat').textContent = d.summary.heartbeat;
   $('m-restarts').textContent = d.summary.recentRestarts;
-  setHtml('services', d.services.map(s => `<div class="service"><span class="dot ${s.status}"></span><div><strong>${esc(s.name)}</strong><div class="detail">${esc(s.detail)}</div></div>${pill(s.status)}</div>`).join(''));
+  setHtml('services', d.services.map(s => `<div class="service service-clickable" data-service-name="${esc(s.name)}" data-service-status="${esc(s.status)}" data-service-detail="${esc(s.detail)}" role="button" tabindex="0"><span class="dot ${s.status}"></span><div><strong>${esc(s.name)}</strong><div class="detail">${esc(s.detail)}</div></div>${pill(s.status)}</div>`).join(''));
   setHtml('channels', d.channels.map(c => `${pill(c.status)}<span>${esc(c.name)}</span>`).join(''));
   renderHarness(d.harness);
   setHtml('guard', d.guard.recent.map(g => `<div class="timeline-item"><div><code>${esc(g.event)}</code> <span class="muted">${esc(g.ts)}</span></div><div class="detail">${esc(g.reason || g.policy || g.output || g.gateway_health || g.node_status || '')}</div></div>`).join('') || '<p class="muted">No guard events yet.</p>');
   setHtml('docker', d.docker.length ? `<div class="row head"><span>Name</span><span>Status</span><span>Ports</span></div>` + d.docker.map(r => `<div class="row"><strong>${esc(r.name)}</strong><span>${esc(r.status)}</span><span class="muted">${esc(r.ports)}</span></div>`).join('') : '<p class="muted">No Docker containers visible, or Docker not running.</p>');
   setHtml('roadmap', d.roadmap.map(x => `<li>${esc(x)}</li>`).join(''));
-  $('raw').textContent = d.raw.openclawStatus;
+  $('raw').textContent = 'Detailed OpenClaw diagnostics are private by design. Use the authenticated local CLI for incident investigation.';
+  renderActionCenter(d);
+}
+
+function renderActionCenter(d = {}) {
+  const services = d.services || [];
+  const attention = services.filter(s => ['critical', 'warning'].includes(s.status));
+  const tasksText = String(d.summary?.tasks || '');
+  const activeTasks = Number((tasksText.match(/\d+/) || [0])[0]);
+  const restarts = Number(d.summary?.recentRestarts || 0);
+  const items = [];
+
+  if (attention.length) {
+    attention.slice(0, 4).forEach(s => {
+      items.push({
+        status: s.status,
+        title: `${s.name} needs review`,
+        detail: s.detail || 'Open the related tab for evidence.'
+      });
+    });
+  }
+
+  if (activeTasks > 0) {
+    items.push({
+      status: 'warning',
+      title: `${activeTasks} background task${activeTasks === 1 ? '' : 's'} active`,
+      detail: 'Open Agents & Tasks to inspect active work before starting another heavy run.'
+    });
+  }
+
+  if (restarts > 0) {
+    items.push({
+      status: 'warning',
+      title: `${restarts} recent guard restart${restarts === 1 ? '' : 's'}`,
+      detail: 'Review Guard Timeline before making runtime changes.'
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      status: 'healthy',
+      title: 'No immediate operational action',
+      detail: 'Core telemetry is healthy. Use Jobs & Runs for trend review or Integrations for route checks.'
+    });
+  }
+
+  setHtml('action-center', items.map(item => `
+    <article class="action-center-item ${esc(item.status)}">
+      <span class="dot ${esc(item.status)}"></span>
+      <div>
+        <strong>${esc(item.title)}</strong>
+        <p>${esc(item.detail)}</p>
+      </div>
+    </article>
+  `).join(''));
 }
 
 function renderHarness(h = {}) {
-  const hs = h.overall === 'pass' ? 'healthy' : h.overall === 'fail' ? 'critical' : h.overall === 'warn' ? 'warning' : h.overall === 'loading' ? 'loading' : 'unknown';
-  const meta = h.deferred ? 'Deferred check · loading after page is interactive' : `${esc(h.checks?.length || 0)} checks · ${esc(h.failed || 0)} failed · ${esc(h.warned || 0)} warnings`;
-  setHtml('harness-summary', `<div class="gate ${hs}"><span class="dot ${hs}"></span><strong>${esc((h.overall || 'unknown').toUpperCase())}</strong><span>${meta}</span></div>${h.error ? `<p class="detail">${esc(h.error)}</p>` : ''}`);
-  setHtml('harness', (h.checks || []).map(c => `<div class="check"><span class="dot ${hStatus(c.status)}"></span><div><strong>${esc(c.name)}</strong><div class="detail">${esc(c.detail)}</div></div><span class="muted">${esc(c.duration_ms)}ms</span></div>`).join('') || '<p class="muted">Harness runs in background; status will appear here.</p>');
+  const snapshotAvailable = h.snapshot?.available === true;
+  const snapshotStale = snapshotAvailable && h.snapshot?.stale === true;
+  const hs = h.overall === 'loading'
+    ? 'loading'
+    : !snapshotAvailable
+      ? 'unknown'
+      : snapshotStale
+        ? 'warning'
+        : h.overall === 'pass'
+          ? 'healthy'
+          : h.overall === 'fail'
+            ? 'critical'
+            : h.overall === 'warn'
+              ? 'warning'
+              : 'unknown';
+  const freshness = snapshotAvailable
+    ? ` · snapshot ${snapshotStale ? 'STALE' : 'fresh'} (${esc(ageLabel(h.snapshot.ageMs))})`
+    : ' · snapshot unavailable';
+  const meta = h.deferred
+    ? 'Deferred snapshot read · loading after page is interactive'
+    : `aggregate snapshot · ${esc(h.failed || 0)} failed · ${esc(h.warned || 0)} warnings${freshness}`;
+  const statusLabel = `${(h.overall || 'unknown').toUpperCase()}${snapshotStale ? ' · STALE' : ''}`;
+  setHtml('harness-summary', `<div class="gate ${hs}"><span class="dot ${hs}"></span><strong>${esc(statusLabel)}</strong><span>${meta}</span></div>${h.error ? `<p class="detail">${esc(h.error)}</p>` : ''}`);
+  const detailMessage = snapshotAvailable
+    ? 'Detailed harness evidence stays in the private mode-0600 local snapshot.'
+    : 'No harness snapshot yet. Run bin/nova-harness-eval-run explicitly.';
+  setHtml('harness', `<p class="muted">${esc(detailMessage)}</p>`);
 }
 
 function renderGrafana(grafana) {
@@ -228,6 +305,19 @@ function renderIncidents(data) {
   const warning = data.classification === 'Synthetic POC evidence' ? '<p class="evidence-note warning">Test/synthetic evidence only. Do not treat as live production impact.</p>' : '';
   const items = (data.items || []).map(item => `<article class="incident-item"><div class="incident-head">${pill(severityStatus(item.severity)).replace(label(severityStatus(item.severity)), esc(item.severity))}<strong>${esc(item.title)}</strong><span>${esc(item.count)} samples</span></div><div class="incident-meta"><code>${esc(item.service)}</code><code>${esc(item.endpoint)}</code><span>max ${esc(item.maxRptMs)} ms</span></div><p>${esc(item.signature)}</p><div class="detail">Dependency: ${esc(item.dependency || 'unknown')}</div></article>`).join('');
   setHtml('incident-radar', banner + warning + (items || `<p class="muted">${esc(data.error || 'No incident evidence available.')}</p>`));
+  hideIncidentRadarIfSynthetic();
+}
+
+function hideIncidentRadarIfSynthetic() {
+  const card = document.querySelector('[data-nova-id="incident-radar"]');
+  if (!card) return;
+  const source = $('incident-source');
+  const sourceText = source ? source.textContent || '' : '';
+  if (/Synthetic POC/i.test(sourceText)) {
+    card.style.display = 'none';
+  } else {
+    card.style.display = '';
+  }
 }
 
 function renderWorkflows(data) {
@@ -417,38 +507,6 @@ function renderCodexQuota(data) {
   setHtml('codex-quota', note + (items || '<p class="muted">No Codex accounts configured.</p>'));
 }
 
-function renderGroqQuota(data) {
-  const note = data.note ? '<p class="quota-note">' + esc(data.note) + '</p>' : '';
-  const items = (data.items || []).map(item => {
-    const statusPill = pill(item.status).replace(label(item.status), esc(item.statusLabel || label(item.status)));
-    const latest = item.latestCallAt ? new Date(item.latestCallAt).toLocaleString() : 'No Groq local call found';
-    const realtime = item.realtimeLimit || {};
-    const realtimeAt = realtime.generatedAt ? new Date(realtime.generatedAt).toLocaleTimeString() : 'Unavailable';
-    const models = item.models || {};
-    const modelSummary = models.reachable
-      ? esc(models.active || 0) + ' active models' + (models.region ? ' · ' + esc(models.region) : '')
-      : 'Model probe unavailable';
-    const sample = (models.sample || []).length ? '<div class="quota-meta"><span>Sample models: ' + esc(models.sample.join(' · ')) + '</span></div>' : '';
-    return '<article class="quota-item">'
-      + '<div class="quota-head"><div><strong>' + esc(item.provider || 'Groq') + '</strong><span>' + esc(item.accountId) + '</span></div>' + statusPill + '</div>'
-      + '<div class="quota-limit"><span>Free-tier quota guide</span><strong>' + esc(item.limitLabel || 'Unavailable') + '</strong><em>Updated ' + esc(realtimeAt) + '</em></div>'
-      + '<div class="quota-windows">'
-      + renderQuotaWindow('Daily request guide', realtime.primary)
-      + renderQuotaWindow('Per-minute burst guide', realtime.secondary)
-      + '</div>'
-      + '<div class="quota-grid">'
-      + '<div><span>24h calls</span><strong>' + esc(item.usage24h?.calls || 0) + '</strong></div>'
-      + '<div><span>24h complete</span><strong>' + esc(item.usage24h?.completed || 0) + '</strong></div>'
-      + '<div><span>7d calls</span><strong>' + esc(item.usage7d?.calls || 0) + '</strong></div>'
-      + '<div><span>7d artifacts</span><strong>' + esc(item.reviewArtifacts7d || 0) + '</strong></div>'
-      + '</div>'
-      + '<div class="quota-meta"><span>API: ' + modelSummary + '</span><span>Key: ' + esc(item.configured ? 'present (redacted)' : 'missing') + '</span><span>Mode: ' + esc(item.keyMode || 'n/a') + '</span><span>Latest: ' + esc(latest) + '</span></div>'
-      + sample
-      + '</article>';
-  }).join('');
-  setHtml('groq-quota', note + (items || '<p class="muted">No Groq provider configured.</p>'));
-}
-
 function renderGemmaQuota(data) {
   const note = data.note ? '<p class="quota-note">' + esc(data.note) + '</p>' : '';
   const items = (data.items || []).map(item => {
@@ -601,29 +659,6 @@ function updateProcessingVisuals() {
   }
 }
 
-function renderAgents(data) {
-  setHtml('configured-agents', (data || []).map(agent => {
-    const isDefaultBadge = agent.isDefault ? '<span class="pill healthy">Default</span>' : '';
-    const bindingsText = agent.bindings || '0 rules';
-    
-    return `<article class="agent-config-card">
-      <div class="agent-card-header">
-        <div class="agent-card-title">
-          <strong>${esc(agent.identityEmoji || '🤖')} ${esc(agent.identityName || agent.id)}</strong>
-          <span>ID: ${esc(agent.id)}</span>
-        </div>
-        ${isDefaultBadge}
-      </div>
-      <div class="agent-card-grid">
-        <div><span>Workspace</span><strong title="${esc(agent.workspace)}">${esc(agent.workspace.split('/').pop())}</strong></div>
-        <div><span>Directory</span><strong title="${esc(agent.agentDir)}">${esc(agent.agentDir.split('/').pop())}</strong></div>
-        <div><span>Default Model</span><strong title="${esc(agent.model)}">${esc(agent.model)}</strong></div>
-        <div><span>Bindings</span><strong>${esc(bindingsText)}</strong></div>
-      </div>
-    </article>`;
-  }).join('') || '<p class="muted">No agents configured.</p>');
-}
-
 function renderActiveWork(data = {}) {
   const sections = data.sections || [];
   const wanted = new Set(['Current Focus', 'Stable / Monitoring', 'Paused / Not Now']);
@@ -650,51 +685,234 @@ function renderActiveWork(data = {}) {
   setHtml('active-work', `<div class="active-work-meta"><span>Source: <code>ACTIVE_WORK.md</code></span><span>Updated: ${esc(updated)}</span></div>${html || '<p class="muted">No active work index found.</p>'}`);
 }
 
-function renderSkillRegistry(data = {}) {
-  const registry = data.registry || {};
-  const evalFlywheel = data.evalFlywheel || {};
-  const latestEval = data.latestEvalResult || {};
-  const summary = registry.summary || {};
-  const evalSummary = latestEval.summary || {};
-  const categories = registry.categories || {};
-  const lanes = evalFlywheel.lanes || [];
-  const risk = summary.risk || {};
-  const categoryCards = Object.entries(categories).slice(0, 8).map(([category, skills]) => `
-    <article class="skill-registry-category">
-      <strong>${esc(category)}</strong>
-      <span>${esc((skills || []).length)} skills</span>
-    </article>
-  `).join('');
-  const laneHtml = lanes.map(lane => `
-    <article class="skill-eval-lane">
-      <strong>${esc(lane.id)}</strong>
-      <p>${esc(lane.goal)}</p>
-      <span>${esc((lane.metrics || []).join(' · '))}</span>
-    </article>
-  `).join('');
-  const updated = registry.generatedAt ? new Date(registry.generatedAt).toLocaleString() : 'unknown';
-  setHtml('skill-registry', `
-    <div class="skill-registry-meta">
-      <div><span>Total skills</span><strong>${esc(summary.skillCount || 0)}</strong></div>
-      <div><span>Categories</span><strong>${esc(summary.categoryCount || 0)}</strong></div>
-      <div><span>High risk</span><strong>${esc(risk.high || 0)}</strong></div>
-      <div><span>Eval lanes</span><strong>${esc(lanes.length)}</strong></div>
+function renderStartupLoop(data = {}) {
+  const counts = data.counts || {};
+  const tasks = data.tasks || [];
+  const summary = `
+    <div class="jobrun-summary startup-summary">
+      <div><span>Now</span><strong>${esc(counts.now || 0)}</strong></div>
+      <div><span>Next</span><strong>${esc(counts.next || 0)}</strong></div>
+      <div><span>Blocked</span><strong>${esc(counts.blocked || 0)}</strong></div>
+      <div><span>Done</span><strong>${esc(counts.done || 0)}</strong></div>
     </div>
-    <div class="skill-eval-result">
-      <div>
-        <span>Latest skill-routing eval</span>
-        <strong>${esc(evalSummary.total || 0)} cases · ${esc(Math.round((evalSummary.categoryAccuracy || 0) * 100))}% category · ${esc(Math.round((evalSummary.riskAccuracy || 0) * 100))}% risk</strong>
+  `;
+  const updated = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : 'not recorded';
+  const taskHtml = tasks.map(task => {
+    const status = task.status === 'done' ? 'healthy' : task.status === 'blocked' ? 'critical' : task.status === 'next' ? 'warning' : 'loading';
+    const artifacts = (task.artifacts || [])
+      .filter(a => a.exists)
+      .map(a => `<span>${esc(a.name.replace('.md', ''))}</span>`)
+      .join('');
+    return `<article class="startup-task">
+      <div class="jobrun-head">
+        <div><strong>${esc(task.title || task.id)}</strong><span><code>${esc(task.id)}</code> · ${esc((task.roles || []).join(' → ') || task.type || 'startup')}</span></div>
+        <span class="pill ${status}">${esc((task.status || 'unknown').toUpperCase())}</span>
       </div>
-      <span>${esc(latestEval.generatedAt ? new Date(latestEval.generatedAt).toLocaleString() : 'no run yet')}</span>
+      <div class="startup-task-meta">
+        <span>${task.dodReady ? 'DoD artifacts ready' : 'DoD needs review'}</span>
+        <span>${esc(task.path || '')}</span>
+      </div>
+      <div class="startup-artifacts">${artifacts || '<span>No artifacts surfaced.</span>'}</div>
+    </article>`;
+  }).join('');
+  const commands = (data.commands || []).map(cmd => `<code>${esc(cmd)}</code>`).join('');
+  setHtml('startup-loop',
+    summary +
+    `<div class="active-work-meta"><span>Source: <code>${esc(data.source || '.gnap/startup-backlog.json')}</code></span><span>Updated: ${esc(updated)}</span></div>` +
+    `<div class="startup-grid"><section>${taskHtml || '<p class="muted">No startup tasks yet.</p>'}</section><aside><strong>CLI</strong>${commands}</aside></div>`
+  );
+}
+
+function renderAutoCron(data = {}) {
+  const s = data.summary || {};
+  const q = data.quality || {};
+  const st = data.state || {};
+  const statusFor = item => item.status === 'blocked' ? 'critical' : item.status === 'done' ? 'healthy' : item.status === 'partial' ? 'warning' : 'loading';
+  const summary = `
+    <div class="jobrun-summary auto-cron-summary">
+      <div><span>Pending</span><strong>${esc(s.pending || 0)}</strong></div>
+      <div><span>Active</span><strong>${esc(s.active || 0)}</strong></div>
+      <div><span>Blocked</span><strong>${esc(s.blocked || 0)}</strong></div>
+      <div><span>Done</span><strong>${esc(s.done || 0)}</strong></div>
+      <div><span>Picks Today</span><strong>${esc(s.picksToday || 0)}/${esc(s.dailyPickLimit || 3)}</strong></div>
+      <div><span>Quality Flags</span><strong>${esc(q.downgraded || 0)}</strong></div>
     </div>
-    <div class="active-work-meta"><span>Source: <code>nova-skill-os/out</code></span><span>Updated: ${esc(updated)}</span></div>
-    <div class="skill-registry-grid">${categoryCards || '<p class="muted">No categories generated.</p>'}</div>
-    <div class="skill-eval-grid">${laneHtml || '<p class="muted">No eval lanes generated.</p>'}</div>
+  `;
+  const active = (data.active || []).map(item => {
+    const review = item.quality_review;
+    const reviewText = review ? `Quality: ${review.passed ? 'pass' : 'review'} · ${esc((review.reasons || []).join(', ') || 'evidence ok')}` : 'Quality: pending';
+    return `<article class="auto-cron-item">
+      <div class="jobrun-head">
+        <div><strong>${esc(item.title || item.id)}</strong><span><code>${esc(item.id)}</code> · ${esc(item.spawn_specialist || item.specialist || 'specialist pending')} · ${esc(item.category || 'misc')} · ${esc(item.risk || '?')}/${esc(item.effort || '?')}</span></div>
+        <span class="pill ${statusFor(item)}">${esc((item.status || 'unknown').toUpperCase())}</span>
+      </div>
+      <p>${esc(item.evidence || item.block_reason || item.skip_reason || item.notes || 'No evidence surfaced yet.')}</p>
+      <div class="active-work-meta"><span>${reviewText}</span>${item.awaiting_human_review ? '<span>Human review requested</span>' : ''}</div>
+    </article>`;
+  }).join('');
+  const recentResults = (data.recentResults || []).slice(0, 4).map(file => `<li><code>${esc(file.name)}</code><span>${esc(ageLabel(Date.now() - Date.parse(file.updatedAt)))}</span></li>`).join('');
+  const recentSpawns = (data.recentSpawns || []).slice(0, 4).map(file => `<li><code>${esc(file.name)}</code><span>${esc(ageLabel(Date.now() - Date.parse(file.updatedAt)))}</span></li>`).join('');
+  const log = (data.logLines || []).slice(-6).map(line => `<div>${esc(line)}</div>`).join('');
+  const meta = `<div class="active-work-meta"><span>Open-door: ${esc(s.openDoorCounter || 0)}/${esc(s.openDoorThreshold || 5)}</span><span>Last pick: ${esc(st.last_pick?.id || 'none')}</span><span>Spawned today: ${esc(s.spawnedToday || 0)}</span></div>`;
+  setHtml('auto-cron', summary + meta + `
+    <div class="auto-cron-grid">
+      <section>${active || '<p class="muted">No active, blocked, or review-needed auto-cron items.</p>'}</section>
+      <aside>
+        <strong>Recent Results</strong>
+        <ul>${recentResults || '<li><span>No result files yet.</span></li>'}</ul>
+        <strong>Recent Spawns</strong>
+        <ul>${recentSpawns || '<li><span>No spawn records yet.</span></li>'}</ul>
+      </aside>
+    </div>
+    <details class="auto-cron-log"><summary>Auto-executor log tail</summary><pre>${log || 'No log lines found.'}</pre></details>
   `);
+}
+
+function renderBrowserRuns(data = {}) {
+  const s = data.summary || {};
+  const summary = `
+    <div class="jobrun-summary browser-runs-summary">
+      <div><span>Total</span><strong>${esc(s.total || 0)}</strong></div>
+      <div><span>Shown</span><strong>${esc(s.shown || 0)}</strong></div>
+      <div><span>Done</span><strong>${esc(s.done || 0)}</strong></div>
+      <div><span>Live</span><strong>${esc(s.live || 0)}</strong></div>
+      <div><span>Failed</span><strong>${esc(s.failed || 0)}</strong></div>
+      <div><span>Partial</span><strong>${esc(s.partial || 0)}</strong></div>
+    </div>
+  `;
+  const statusClass = status => status === 'failed' ? 'critical' : status === 'partial' ? 'warning' : status === 'live' ? 'loading' : status === 'done' ? 'healthy' : 'unknown';
+  const items = (data.items || []).map(run => {
+    const updated = run.updatedAt ? ageLabel(Date.now() - Date.parse(run.updatedAt)) : 'time unknown';
+    const result = (run.resultTail || []).slice(-4).map(line => esc(line)).join('\n');
+    return `<article class="browser-run-item">
+      <div class="jobrun-head">
+        <div>
+          <strong>${esc(run.title || run.id)}</strong>
+          <span><code>${esc(run.id)}</code> · ${esc(run.agent || 'nova')} · ${esc(run.source || 'manual')} · ${esc(updated)}</span>
+        </div>
+        <span class="pill ${statusClass(run.status)}">${esc(String(run.status || 'unknown').toUpperCase())}</span>
+      </div>
+      <div class="browser-run-meta">
+        <span>Tools <strong>${esc(run.toolCallCount || 0)}</strong></span>
+        <span>Screenshots <strong>${esc(run.screenshotCount || 0)}</strong></span>
+        <span>${run.manifestOk ? 'Manifest OK' : 'Manifest missing'}</span>
+      </div>
+      ${run.url ? `<p class="detail">URL: ${esc(run.url)}</p>` : ''}
+      ${run.notes ? `<p>${esc(run.notes)}</p>` : ''}
+      <pre>${result || 'No result tail yet.'}</pre>
+    </article>`;
+  }).join('');
+  setHtml('browser-runs',
+    summary +
+    `<div class="active-work-meta"><span>Source: <code>${esc(data.source?.dir || '~/.openclaw/state/browser-runs')}</code></span><span>CLI: <code>${esc(data.source?.cli || 'bin/nova-browser-artifact')}</code></span></div>` +
+    `<div class="browser-run-list">${items || '<p class="muted">No browser run artifacts yet. Use <code>bin/nova-browser-artifact create</code> after browser automation runs.</p>'}</div>`
+  );
+}
+
+function renderProposalQueue(data = {}) {
+  const summary = data.summary || {};
+  const banner = `
+    <div class="jobrun-summary proposal-summary">
+      <div><span>Total</span><strong>${esc(summary.total || 0)}</strong></div>
+      <div><span>Proposed</span><strong>${esc(summary.proposed || 0)}</strong></div>
+      <div><span>Accepted</span><strong>${esc(summary.accepted || 0)}</strong></div>
+      <div><span>Deferred</span><strong>${esc(summary.deferred || 0)}</strong></div>
+    </div>
+  `;
+  const items = (data.items || []).map(item => {
+    const status = item.status === 'accepted' ? 'healthy' : item.status === 'rejected' ? 'critical' : item.status === 'deferred' ? 'warning' : 'loading';
+    const decision = item.decisionReason ? `<p class="detail">${esc(item.decisionReason)}</p>` : '';
+    const task = item.relatedTaskId ? `<code>${esc(item.relatedTaskId)}</code>` : '<span>not converted yet</span>';
+    return `<article class="proposal-item ${esc(item.status || 'proposed')}">
+      <div class="jobrun-head">
+        <div><strong>${esc(item.title || item.id)}</strong><span>${esc(item.priority || 'P?')} · ${esc(item.target || 'Nova')}</span></div>
+        <span class="pill ${status}">${esc((item.status || 'proposed').toUpperCase())}</span>
+      </div>
+      <p>${esc(item.summary || '')}</p>
+      ${decision}
+      <div class="proposal-meta">
+        <span>Next: ${esc(item.nextStep || 'review')}</span>
+        <span>Task: ${task}</span>
+      </div>
+    </article>`;
+  }).join('');
+  setHtml('proposal-queue', banner + (items || '<p class="muted">No proposals surfaced.</p>'));
+}
+
+function renderNovaEvents(data = {}) {
+  const summary = data.summary || {};
+  const banner = `
+    <div class="jobrun-summary nova-event-summary">
+      <div><span>Events</span><strong>${esc(summary.total || 0)}</strong></div>
+      <div><span>Healthy</span><strong>${esc(summary.healthy || 0)}</strong></div>
+      <div><span>Warning</span><strong>${esc(summary.warning || 0)}</strong></div>
+      <div><span>Critical</span><strong>${esc(summary.critical || 0)}</strong></div>
+    </div>
+  `;
+  const items = (data.events || []).map(event => {
+    const when = event.ts ? new Date(event.ts).toLocaleString() : 'time unknown';
+    const status = event.status || 'info';
+    const meta = [event.source, event.type, event.taskId].filter(Boolean).join(' · ');
+    return `<article class="nova-event-item ${esc(status)}">
+      <span class="dot ${esc(status === 'info' ? 'healthy' : status)}"></span>
+      <div>
+        <strong>${esc(event.title || event.type || 'event')}</strong>
+        <p>${esc(event.message || '')}</p>
+        <small>${esc(when)}${meta ? ' · ' + esc(meta) : ''}</small>
+      </div>
+    </article>`;
+  }).join('');
+  setHtml('nova-events', banner
+    + `<div class="active-work-meta"><span>Source: <code>${esc(data.source || 'events/nova-events.jsonl')}</code></span><span>${data.exists ? 'append-only journal active' : 'journal not created yet'}</span></div>`
+    + `<div class="nova-event-list">${items || '<p class="muted">No Nova events recorded yet.</p>'}</div>`);
+}
+
+function renderClassifierStats(data = {}) {
+  const summary = data.summary || {};
+  const banner = `
+    <div class="jobrun-summary classifier-summary">
+      <div><span>Total</span><strong>${esc(summary.total || 0)}</strong></div>
+      <div><span>T1 Free</span><strong>${esc(summary.tier1 || 0)}</strong></div>
+      <div><span>T2 Git Gate</span><strong>${esc(summary.tier2 || 0)}</strong></div>
+      <div><span>T3 Classified</span><strong>${esc(summary.tier3 || 0)}</strong></div>
+      <div><span>Blocked</span><strong class="${(summary.blockShadow || 0) > 0 ? 'critical' : 'healthy'}">${esc(summary.blockShadow || 0)}</strong></div>
+    </div>
+  `;
+  const items = (data.recent || []).slice(0, 8).map(d => {
+    const when = d.ts ? new Date(d.ts).toLocaleString() : 'time unknown';
+    const tier = d.tier || '?';
+    const action = d.shadow_action || 'unknown';
+    const isBlock = action === 'BLOCK_SHADOW';
+    const isFlag = action === 'FLAG_SHADOW';
+    const cls = isBlock ? 'critical' : isFlag ? 'warning' : 'healthy';
+    const reason = d.stage1_reason || (d.stage2_verdict ? `${d.stage2_verdict}` : '');
+    return `<article class="classifier-decision-item ${cls}">
+      <span class="dot ${cls}"></span>
+      <div>
+        <strong>T${tier} · ${esc(action)}</strong>
+        <p>${esc(d.tool || '')} ${esc(d.args_preview || '').slice(0, 80)}</p>
+        ${reason ? `<small class="classifier-reason">↳ ${esc(reason)}</small>` : ''}
+        <small>${esc(when)}</small>
+      </div>
+    </article>`;
+  }).join('');
+  const statusLine = data.exists
+    ? `<span class="muted">append-only audit active · ${esc(summary.total || 0)} decisions</span>`
+    : `<span class="muted">no audit log yet</span>`;
+  setHtml('classifier-stats', banner
+    + `<div class="active-work-meta"><span>Source: <code>${esc(data.source || 'data/classifier-decisions/')}</code></span>${statusLine}</div>`
+    + `<div class="classifier-decision-list">${items || '<p class="muted">No classifier decisions recorded yet.</p>'}</div>`);
 }
 
 function renderTeamControl(data) {
   const summary = data.summary || {};
+  const commandCenter = data.commandCenter || {};
+  const ccSummary = commandCenter.summary || {};
+  const ccPosture = commandCenter.posture || 'healthy';
+  const ccAgents = commandCenter.agents || [];
+  const ccApprovals = commandCenter.approvals || [];
+  const ccEvidence = commandCenter.latestEvidence || [];
+  const ccSafety = commandCenter.safety || [];
   const healthClass = data.health === 'critical' ? 'critical' : data.health === 'warning' ? 'warning' : 'healthy';
   const runningTasks = data.live?.runningTasks || [];
   const failedTasks = data.live?.failedTasks || [];
@@ -839,6 +1057,89 @@ function renderTeamControl(data) {
       </div>
     </article>
   `).join('') || '<p class="muted">No agents configured in roster.</p>';
+
+  const ccMetricsHtml = [
+    ['Fleet', ccSummary.agents || 0],
+    ['Active', ccSummary.activeAgents || 0],
+    ['Running', ccSummary.runningTasks || 0],
+    ['Approvals', ccSummary.pendingApprovals || 0],
+    ['Evidence', ccSummary.evidenceReports || 0],
+  ].map(([name, value]) => `<div><span>${esc(name)}</span><strong>${esc(value)}</strong></div>`).join('');
+
+  const ccAgentsHtml = ccAgents.slice(0, 8).map(agent => {
+    const stateClass = agent.state === 'done' ? 'healthy' : agent.state === 'blocked' || agent.attention === 'failed' ? 'critical' : agent.attention === 'approval' ? 'warning' : agent.state === 'running' ? 'active' : 'unknown';
+    const evidence = (agent.evidence || []).slice(0, 3);
+    return `
+      <article class="agent-fleet-card ${esc(stateClass)}">
+        <div class="agent-fleet-head">
+          <div>
+            <strong>${esc(agent.role || 'Agent')}</strong>
+            <span>${esc(agent.title || agent.taskId || agent.id)}</span>
+          </div>
+          <span class="pill ${esc(stateClass === 'active' ? 'healthy' : stateClass)}">${esc(agent.state || 'unknown')}</span>
+        </div>
+        <div class="agent-fleet-meta">
+          <span>Phase: ${esc(agent.phase || 'unknown')}</span>
+          <span>Risk: ${esc(agent.risk || 'local')}</span>
+          <span>Attention: ${esc(agent.attention || 'none')}</span>
+          ${agent.model ? `<span>Model: ${esc(agent.model)}</span>` : ''}
+        </div>
+        <div class="evidence-chip-row">
+          ${evidence.length ? evidence.map(item => `<code title="${esc(item)}">${esc(String(item).split('/').pop() || item)}</code>`).join('') : '<span class="muted">No evidence linked yet</span>'}
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  const ccApprovalsHtml = ccApprovals.map(item => `
+    <article class="approval-inbox-card">
+      <div>
+        <strong>${esc(item.title || item.id)}</strong>
+        <span>${esc(item.role || 'Worker')} · ${esc(item.risk || 'local')}</span>
+      </div>
+      <p>${esc(item.reason || 'Waiting for approval.')}</p>
+      <div class="evidence-chip-row">
+        ${(item.evidence || []).length ? item.evidence.map(e => `<code title="${esc(e)}">${esc(String(e).split('/').pop() || e)}</code>`).join('') : '<span class="muted">No evidence attached</span>'}
+      </div>
+    </article>
+  `).join('');
+
+  const ccEvidenceHtml = ccEvidence.map(item => `
+    <article class="command-evidence-item ${item.passed ? 'healthy' : 'warning'}">
+      <span class="dot ${item.passed ? 'healthy' : 'warning'}"></span>
+      <div>
+        <strong>${esc(item.title || 'evidence')}</strong>
+        <code title="${esc(item.path || '')}">${esc((item.path || '').split('/').pop() || item.path || 'path unavailable')}</code>
+      </div>
+    </article>
+  `).join('');
+
+  const commandCenterHtml = `
+    <section class="command-center-mvp" data-posture="${esc(ccPosture)}">
+      <div class="command-center-head">
+        <div>
+          <span class="eyebrow">Command Center MVP</span>
+          <h2>Agent Fleet & Approval Inbox</h2>
+          <p>Read-only view from local runtime data. No third-party installs or admin actions.</p>
+        </div>
+        <span class="command-posture ${esc(ccPosture)}">${esc(ccPosture.replace('_', ' '))}</span>
+      </div>
+      <div class="command-center-metrics">${ccMetricsHtml}</div>
+      <div class="command-center-grid">
+        <section>
+          <div class="cockpit-panel-header"><span>Agent Fleet</span></div>
+          <div class="agent-fleet-list">${ccAgentsHtml || '<p class="muted">No fleet telemetry available yet.</p>'}</div>
+        </section>
+        <section>
+          <div class="cockpit-panel-header"><span>Approval Inbox</span></div>
+          <div class="approval-inbox-list">${ccApprovalsHtml || '<p class="muted">No pending approvals.</p>'}</div>
+          <div class="cockpit-panel-header evidence-head"><span>Latest Evidence</span></div>
+          <div class="command-evidence-list">${ccEvidenceHtml || '<p class="muted">No verification evidence found.</p>'}</div>
+          <div class="safety-rule-strip">${ccSafety.map(rule => `<span>${esc(rule)}</span>`).join('')}</div>
+        </section>
+      </div>
+    </section>
+  `;
 
   const runtime = data.runtime || {};
   const runtimeSummary = runtime.summary || {};
@@ -1050,18 +1351,17 @@ function renderTeamControl(data) {
           <span class="cockpit-chip ${summary.failedReports ? 'warning' : 'healthy'}">Verify ${esc(summary.passedReports || 0)}/${esc(summary.recentReports || 0)}</span>
         </div>
         <div class="cockpit-actions">
-          <button type="button" id="cockpit-btn-deploy" class="cockpit-action primary">Deploy Agent</button>
+          <button type="button" id="cockpit-btn-deploy" class="cockpit-action primary">Routing Guide</button>
           <button type="button" id="cockpit-btn-verify" class="cockpit-action">Run Verification</button>
           <button type="button" id="cockpit-btn-logs" class="cockpit-action danger">Logs</button>
         </div>
       </div>
 
+      ${commandCenterHtml}
+
       <nav class="cockpit-subtabs" role="tablist">
         <button type="button" class="subtab-btn ${activeSubTab === 'orchestrator' ? 'active' : ''}" data-subtab="orchestrator" role="tab" aria-selected="${activeSubTab === 'orchestrator'}">
           <span class="subtab-icon">⌬</span> Orchestrator
-        </button>
-        <button type="button" class="subtab-btn ${activeSubTab === 'workbench' ? 'active' : ''}" data-subtab="workbench" role="tab" aria-selected="${activeSubTab === 'workbench'}">
-          <span class="subtab-icon">🖥️</span> Workbench
         </button>
         <button type="button" class="subtab-btn ${activeSubTab === 'workers' ? 'active' : ''}" data-subtab="workers" role="tab" aria-selected="${activeSubTab === 'workers'}">
           <span class="subtab-icon">🤖</span> Workers
@@ -1069,15 +1369,25 @@ function renderTeamControl(data) {
         <button type="button" class="subtab-btn ${activeSubTab === 'quality' ? 'active' : ''}" data-subtab="quality" role="tab" aria-selected="${activeSubTab === 'quality'}">
           <span class="subtab-icon">🛡️</span> Quality
         </button>
-        <button type="button" class="subtab-btn ${activeSubTab === 'security' ? 'active' : ''}" data-subtab="security" role="tab" aria-selected="${activeSubTab === 'security'}">
-          <span class="subtab-icon">🔒</span> Security
-        </button>
-        <button type="button" class="subtab-btn ${activeSubTab === 'analytics' ? 'active' : ''}" data-subtab="analytics" role="tab" aria-selected="${activeSubTab === 'analytics'}">
-          <span class="subtab-icon">📈</span> Analytics
-        </button>
         <button type="button" class="subtab-btn ${activeSubTab === 'routing' ? 'active' : ''}" data-subtab="routing" role="tab" aria-selected="${activeSubTab === 'routing'}">
           <span class="subtab-icon">🔀</span> Routing
         </button>
+        <details class="subtab-advanced-dropdown" data-nova-id="advanced-subtabs">
+          <summary class="subtab-btn subtab-advanced-trigger ${['workbench','security','analytics'].includes(activeSubTab) ? 'active' : ''}">
+            <span class="subtab-icon">⋯</span> Advanced (3)
+          </summary>
+          <div class="subtab-advanced-menu" role="tablist">
+            <button type="button" class="subtab-btn subtab-advanced-item ${activeSubTab === 'workbench' ? 'active' : ''}" data-subtab="workbench" role="tab" aria-selected="${activeSubTab === 'workbench'}">
+              <span class="subtab-icon">🖥️</span> Workbench
+            </button>
+            <button type="button" class="subtab-btn subtab-advanced-item ${activeSubTab === 'security' ? 'active' : ''}" data-subtab="security" role="tab" aria-selected="${activeSubTab === 'security'}">
+              <span class="subtab-icon">🔒</span> Security
+            </button>
+            <button type="button" class="subtab-btn subtab-advanced-item ${activeSubTab === 'analytics' ? 'active' : ''}" data-subtab="analytics" role="tab" aria-selected="${activeSubTab === 'analytics'}">
+              <span class="subtab-icon">📈</span> Analytics
+            </button>
+          </div>
+        </details>
       </nav>
 
       <div id="subtab-orchestrator" class="subtab-content ${activeSubTab === 'orchestrator' ? 'active' : ''}">
@@ -1134,37 +1444,48 @@ function renderTeamControl(data) {
             </div>
           </section>
         </div>
-        <section class="orchestrator-panel dag-orchestration-panel">
+        <section class="orchestrator-panel reference-captures-panel" data-nova-id="reference-captures">
           <div class="cockpit-panel-header">
-            <span>DAG Orchestration View</span>
-            <small class="dag-reference-note">Synapse review captured locally</small>
+            <span>Reference Captures</span>
+            <small class="dag-reference-note">Synapse + MASFactory · reference only, not operational</small>
           </div>
-          <div class="dag-stage" aria-label="Read-only deterministic orchestration DAG">
-            ${dagEdgesHtml}
-            ${dagNodesHtml}
-          </div>
-          <div class="dag-legend">
-            <span>Source: local runtime artifacts</span>
-            <span>Human gate: ${esc(runtimeSummary.needsApproval || 0)} pending</span>
-            <span>Restart-safe watch: ${runtimeSummary.watchLaunchAgent?.installed ? 'installed' : 'not configured'}</span>
-            <span>License mode: reference only, no AGPL code copied</span>
-          </div>
-        </section>
-        <section class="orchestrator-panel vibe-graph-panel">
-          <div class="cockpit-panel-header">
-            <span>Vibe Graph Draft</span>
-            <small class="dag-reference-note">MASFactory review captured locally</small>
-          </div>
-          <div class="vibe-graph-stage" aria-label="Read-only Vibe Graph Draft">
-            ${vibeDraftEdgesHtml}
-            ${vibeDraftNodesHtml}
-          </div>
-          <div class="vibe-template-strip">${vibeTemplateHtml}</div>
-          <div class="dag-legend">
-            <span>Mode: proposed structure, not execution</span>
-            <span>Nodes: Agent / Tool / Human / Switch / Loop / ContextBlock</span>
-            <span>Reference: Apache-2.0 MASFactory, no install</span>
-          </div>
+          <details class="reference-captures-details">
+            <summary>Show DAG Orchestration + Vibe Graph (reference captures)</summary>
+            <div class="reference-captures-body">
+              <section class="orchestrator-panel dag-orchestration-panel">
+                <div class="cockpit-panel-header">
+                  <span>DAG Orchestration View</span>
+                  <small class="dag-reference-note">Synapse review captured locally</small>
+                </div>
+                <div class="dag-stage" aria-label="Read-only deterministic orchestration DAG">
+                  ${dagEdgesHtml}
+                  ${dagNodesHtml}
+                </div>
+                <div class="dag-legend">
+                  <span>Source: local runtime artifacts</span>
+                  <span>Human gate: ${esc(runtimeSummary.needsApproval || 0)} pending</span>
+                  <span>Restart-safe watch: ${runtimeSummary.watchLaunchAgent?.installed ? 'installed' : 'not configured'}</span>
+                  <span>License mode: reference only, no AGPL code copied</span>
+                </div>
+              </section>
+              <section class="orchestrator-panel vibe-graph-panel">
+                <div class="cockpit-panel-header">
+                  <span>Vibe Graph Draft</span>
+                  <small class="dag-reference-note">MASFactory review captured locally</small>
+                </div>
+                <div class="vibe-graph-stage" aria-label="Read-only Vibe Graph Draft">
+                  ${vibeDraftEdgesHtml}
+                  ${vibeDraftNodesHtml}
+                </div>
+                <div class="vibe-template-strip">${vibeTemplateHtml}</div>
+                <div class="dag-legend">
+                  <span>Mode: proposed structure, not execution</span>
+                  <span>Nodes: Agent / Tool / Human / Switch / Loop / ContextBlock</span>
+                  <span>Reference: Apache-2.0 MASFactory, no install</span>
+                </div>
+              </section>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -1702,9 +2023,9 @@ function renderTeamControl(data) {
   if (btnDeploy) {
     btnDeploy.addEventListener('click', () => {
       termInput?.focus();
-      appendTerminalLine('> deploy', 'command');
-      appendTerminalLine('Tactical Deployment Wizard:', 'info');
-      appendTerminalLine('  To deploy a specialist agent to route a task, use the main chat interface.', 'muted');
+      appendTerminalLine('> routing-guide', 'command');
+      appendTerminalLine('Routing Guide:', 'info');
+      appendTerminalLine('  This dashboard is read-only. Start or route specialist work from the main chat interface.', 'muted');
       appendTerminalLine('  Active Routing Rules:', 'info');
       (data.routerRules || []).forEach(r => {
         appendTerminalLine(`  - ${r}`, 'muted');
@@ -1715,114 +2036,28 @@ function renderTeamControl(data) {
 
 }
 
-function renderActiveSessions(data) {
-  const summary = `<div class="token-session-summary" style="margin-bottom: 15px;">
-    <div><span>Active Sessions</span><strong>${esc(data.count || 0)}</strong></div>
-    <div><span>Showing</span><strong>${esc(data.recent?.length || 0)} recent</strong></div>
-  </div>`;
-
-  const items = (data.recent || []).map(session => {
-    const ageStr = ageLabel(session.age);
-    const pct = Math.max(0, Math.min(100, Number(session.percentUsed || 0)));
-    const cachePct = session.totalTokens ? Math.round((session.cacheRead / session.totalTokens) * 100) : 0;
-    const isCritical = pct > 85;
-
-    return `<article class="active-session-card">
-      <div class="session-card-header">
-        <div class="session-card-title">
-          <strong>${esc(session.key ? session.key.replace(/^agent:/, '') : session.sessionId.slice(0, 12))}</strong>
-          <span>Model: ${esc(session.model)}</span>
-        </div>
-        <span class="pill healthy">${esc(ageStr)}</span>
-      </div>
-      <div class="session-token-bar ${isCritical ? 'danger' : ''}"><i style="width:${pct}%"></i></div>
-      <div class="session-card-grid">
-        <div><span>Tokens</span><strong>${compactNumber(session.totalTokens)}</strong></div>
-        <div><span>Cache Read</span><strong>${cachePct}%</strong></div>
-        <div><span>Remaining</span><strong>${compactNumber(session.remainingTokens || 0)}</strong></div>
-        <div><span>Runtime</span><strong>${esc(session.runtime || 'unknown')}</strong></div>
-      </div>
-      <div class="quota-meta" style="margin-top: 8px; font-size: 9px; color: var(--text-muted); display: flex; justify-content: space-between;">
-        <span>ID: ${esc(session.sessionId)}</span>
-        <span>Updated: ${new Date(session.updatedAt).toLocaleTimeString()}</span>
-      </div>
-    </article>`;
-  }).join('');
-
-  setHtml('active-sessions', summary + (items || '<p class="muted">No active sessions found.</p>'));
-
-  const hasRecentActiveSession = data.recent && data.recent.some(s => s.age < 120000);
-  if (window.dashboardState) {
-    window.dashboardState.sessionsActive = hasRecentActiveSession;
-  }
-  updateProcessingVisuals();
-}
-
-function renderActiveTasks(data) {
-  const tasks = data.tasks || [];
-  const running = tasks.filter(t => t.status === 'running' || t.status === 'queued');
-  const finished = tasks.filter(t => t.status !== 'running' && t.status !== 'queued').slice(0, 15);
-
-  const summary = `<div class="jobrun-summary" style="margin-bottom: 15px;">
-    <div><span>Background Tasks</span><strong>${esc(data.count || 0)}</strong></div>
-    <div><span>Running/Queued</span><strong class="${running.length ? 'text-cyan' : ''}">${esc(running.length)}</strong></div>
-  </div>`;
-
-  let html = summary;
-
-  if (running.length > 0) {
-    html += `<h3 style="margin: 15px 0 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-transform: uppercase; color: var(--cyan);">Running / Queued Tasks</h3>`;
-    html += running.map(t => {
-      const taskStatusClass = t.status === 'running' ? 'healthy' : 'warning';
-      return `<article class="active-task-card" style="border-left: 3px solid var(--cyan); background: rgba(0, 240, 255, 0.02);">
-        <div class="task-card-header">
-          <div class="task-card-title">
-            <strong>${esc(t.label || t.task)}</strong>
-            <span>ID: ${esc(t.taskId)} · Kind: ${esc(t.runtime)}</span>
-          </div>
-          <span class="pill ${taskStatusClass}">${esc(t.status.toUpperCase())}</span>
-        </div>
-        <div class="task-card-grid">
-          <div><span>Started</span><strong>${new Date(t.startedAt || t.createdAt).toLocaleTimeString()}</strong></div>
-          <div><span>Progress</span><strong title="${esc(t.progressSummary || 'none')}">${esc(t.progressSummary || 'none')}</strong></div>
-        </div>
-      </article>`;
-    }).join('');
-  }
-
-  html += `<h3 style="margin: 20px 0 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-transform: uppercase; color: var(--cyan);">Recent Background Tasks</h3>`;
-  html += finished.map(t => {
-    const isSuccess = t.status === 'succeeded' || t.status === 'completed';
-    const taskStatusClass = isSuccess ? 'healthy' : t.status === 'failed' ? 'critical' : 'warning';
-    const duration = t.endedAt && t.startedAt ? Math.round((t.endedAt - t.startedAt) / 1000) + 's' : '';
-
-    return `<article class="active-task-card">
-      <div class="task-card-header">
-        <div class="task-card-title">
-          <strong>${esc(t.label || t.task)}</strong>
-          <span>ID: ${esc(t.taskId)} · Kind: ${esc(t.runtime)}</span>
-        </div>
-        <span class="pill ${taskStatusClass}">${esc(t.status)}</span>
-      </div>
-      <div class="task-card-grid">
-        <div><span>Time</span><strong>${new Date(t.endedAt || t.startedAt || t.createdAt).toLocaleString()}</strong></div>
-        <div><span>Duration</span><strong>${esc(duration || 'unknown')}</strong></div>
-      </div>
-      ${t.terminalSummary ? `<div class="task-terminal-summary">${esc(t.terminalSummary)}</div>` : ''}
-    </article>`;
-  }).join('') || '<p class="muted">No recent tasks found.</p>';
-
-  setHtml('active-tasks', html);
-
-  const isRunning = running.length > 0;
-  if (window.dashboardState) {
-    window.dashboardState.tasksRunning = isRunning;
-  }
-  updateProcessingVisuals();
-}
-
 function renderPlatform(platform) {
   setHtml('platform-docs', (platform.docs || []).map(doc => `<article class="platform-doc"><h3>${esc(doc.title)}</h3><p>${esc((doc.text || '').split('\n').filter(Boolean).slice(0, 4).join(' '))}</p><details><summary>Read full document</summary><pre>${esc(doc.text || '')}</pre></details></article>`).join(''));
+}
+
+async function load(force = false) {
+  const refresh = $('refresh');
+  if (refresh) refresh.disabled = true;
+  try {
+    const d = await getJson('/api/status' + (force ? '?refresh=1' : ''));
+    renderFastStatus(d);
+    requestAnimationFrame(() => {
+      loadDetails(force);
+      loadHarness(force);
+    });
+  } catch (e) {
+    playCommandSound('error');
+    $('overall').textContent = 'Dashboard telemetry failed';
+    $('overall-dot').className = 'dot critical';
+    setHtml('services', `<p class="detail">Status load failed: ${esc(e.message)}</p>`);
+  } finally {
+    if (refresh) refresh.disabled = false;
+  }
 }
 
 async function loadDetails(force = false) {
@@ -1830,7 +2065,6 @@ async function loadDetails(force = false) {
   const jobs = [
     ['/api/codex-quota' + suffix, renderCodexQuota, 'codex-quota'],
     ['/api/gemma-quota' + suffix, renderGemmaQuota, 'gemma-quota'],
-    ['/api/groq-quota' + suffix, renderGroqQuota, 'groq-quota'],
     ['/api/minimax-quota' + suffix, renderMinimaxQuota, 'minimax-quota'],
     ['/api/token-sessions' + suffix, renderTokenSessions, 'token-sessions'],
     ['/api/context-budget' + suffix, renderContextBudget, 'context-budget'],
@@ -1844,12 +2078,14 @@ async function loadDetails(force = false) {
     ['/api/alert-quality' + suffix, renderAlertQuality, 'alert-quality'],
     ['/api/job-runs' + suffix, renderJobRuns, 'job-runs'],
     ['/api/platform-docs' + suffix, renderPlatform, 'platform-docs'],
-    ['/api/team-control' + suffix, renderTeamControl, 'team-control-room'],
+    ['/api/command-center' + suffix, renderTeamControl, 'team-control-room'],
     ['/api/active-work' + suffix, renderActiveWork, 'active-work'],
-    ['/api/skill-registry' + suffix, renderSkillRegistry, 'skill-registry'],
-    ['/api/agents' + suffix, renderAgents, 'configured-agents'],
-    ['/api/active-sessions' + suffix, renderActiveSessions, 'active-sessions'],
-    ['/api/active-tasks' + suffix, renderActiveTasks, 'active-tasks'],
+    ['/api/startup' + suffix, renderStartupLoop, 'startup-loop'],
+    ['/api/auto-cron' + suffix, renderAutoCron, 'auto-cron'],
+    ['/api/browser-runs' + suffix, renderBrowserRuns, 'browser-runs'],
+    ['/api/proposals' + suffix, renderProposalQueue, 'proposal-queue'],
+    ['/api/nova-events' + suffix, renderNovaEvents, 'nova-events'],
+    ['/api/classifier-stats' + suffix, renderClassifierStats, 'classifier-stats'],
   ];
   await Promise.all(jobs.map(async ([url, render, id]) => {
     try { render(await getJson(url)); }
@@ -1857,13 +2093,128 @@ async function loadDetails(force = false) {
   }));
 }
 
+async function loadMemory() {
+  try {
+    const data = await getJson('/api/memory');
+    const select = $('memory-date-select');
+    if (!select) return;
+
+    const currentSelected = select.value;
+    select.innerHTML = (data.files || []).map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+
+    if (currentSelected && (data.files || []).includes(currentSelected)) {
+      select.value = currentSelected;
+      await loadMemoryFile(currentSelected);
+    } else if (data.latest) {
+      select.value = data.latest;
+      setHtml('memory-content-area', formatMarkdown(data.latestContent || ''));
+    } else {
+      setHtml('memory-content-area', '<p class="muted">No daily note memory archives found.</p>');
+    }
+  } catch (e) {
+    setHtml('memory-content-area', `<p class="detail">Failed to load daily memory: ${esc(e.message)}</p>`);
+  }
+}
+
+async function loadMemoryFile(date) {
+  try {
+    const data = await getJson(`/api/memory?date=${encodeURIComponent(date)}`);
+    setHtml('memory-content-area', formatMarkdown(data.content || ''));
+  } catch (e) {
+    setHtml('memory-content-area', `<p class="detail">Failed to load daily note: ${esc(e.message)}</p>`);
+  }
+}
+
+function formatMarkdown(text) {
+  if (!text) return '';
+  let html = esc(text);
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+  return html;
+}
+
+async function triggerSummary() {
+  const btn = $('trigger-summary-btn');
+  const status = $('trigger-summary-status');
+  if (!btn || !status) return;
+
+  btn.disabled = true;
+  status.textContent = 'Running summarizer script...';
+  status.className = 'status-msg warning';
+  playCommandSound('tap');
+
+  try {
+    const res = await fetch(apiUrl('/api/trigger-summary'));
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Turn summarized successfully. Telegram and daily note updated.';
+      status.className = 'status-msg healthy';
+      playCommandSound('confirm');
+      await loadMemory();
+    } else {
+      status.textContent = 'Failed: ' + (data.output || 'Unknown error');
+      status.className = 'status-msg critical';
+      playCommandSound('error');
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status-msg critical';
+    playCommandSound('error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function loadHarness(force = false) {
   try { renderHarness(await getJson('/api/harness' + (force ? '?refresh=1' : ''))); }
   catch (e) { renderHarness({ overall: 'unknown', error: 'Harness load failed: ' + e.message, checks: [] }); }
 }
 
+// === Service Drill-Down Modal (Patch 1) ===
+function openServiceModal(name, status, detail) {
+  const guardEvents = (window.dashboardState?.snapshot?.guard?.recent || []).filter(g => {
+    const haystack = JSON.stringify(g).toLowerCase();
+    return haystack.includes(name.toLowerCase()) || (g.event || '').toLowerCase().includes(name.toLowerCase().split(' ')[0]);
+  }).slice(0, 5);
+
+  $('service-modal-status').className = `dot ${status}`;
+  $('service-modal-title').textContent = name;
+  $('service-modal-pill').outerHTML = pill(status);
+  $('service-modal-detail').textContent = detail || '(no detail)';
+  $('service-modal-event-count').textContent = guardEvents.length;
+  $('service-modal-events').innerHTML = guardEvents.length
+    ? guardEvents.map(g => `<div class="timeline-item"><div><code>${esc(g.event)}</code> <span class="muted">${esc(g.ts)}</span></div><div class="detail">${esc(g.reason || g.policy || g.output || g.gateway_health || g.node_status || '')}</div></div>`).join('')
+    : '<p class="muted">No related guard events in recent window.</p>';
+  $('service-modal-cli').textContent = `bin/nova-harness check --json 2>&1 | jq '.checks[] | select(.name | test("' + name.toLowerCase().split(' ').filter(Boolean)[0] + '"; "i"))'`;
+  $('service-modal').hidden = false;
+}
+
+function closeServiceModal() {
+  $('service-modal').hidden = true;
+}
+
+// Event delegation for service clicks + modal close
+document.addEventListener('click', (e) => {
+  const card = e.target.closest('.service-clickable');
+  if (card && !e.target.closest('button, a, input, select, textarea')) {
+    openServiceModal(card.dataset.serviceName, card.dataset.serviceStatus, card.dataset.serviceDetail);
+    return;
+  }
+  if (e.target.matches('[data-action="close-modal"]') || e.target.classList.contains('modal-overlay')) {
+    closeServiceModal();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeServiceModal();
+});
+
+
 function init() {
-  ['codex-quota', 'gemma-quota', 'groq-quota', 'minimax-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'ops-ledger', 'alert-quality', 'job-runs', 'platform-docs', 'team-control-room', 'active-work', 'configured-agents', 'active-sessions', 'active-tasks'].forEach(id => setHtml(id, skeleton(2)));
+  ['action-center', 'codex-quota', 'gemma-quota', 'minimax-quota', 'token-sessions', 'context-budget', 'telegram-health', 'grafana-mcp', 'web-inventory', 'alert-routes', 'incident-radar', 'workflow-health', 'ops-ledger', 'alert-quality', 'job-runs', 'nova-events', 'classifier-stats', 'platform-docs', 'team-control-room', 'active-work', 'startup-loop', 'auto-cron', 'browser-runs', 'proposal-queue'].forEach(id => setHtml(id, skeleton(2)));
   renderHarness({ overall: 'loading', deferred: true, checks: [] });
   $('refresh').addEventListener('click', () => {
     playCommandSound('tap');
@@ -1875,13 +2226,12 @@ function init() {
     playCommandSound('tap');
     loadMemoryFile(e.target.value);
   });
-  $('trigger-summary-btn')?.addEventListener('click', typeof triggerSummary === 'function' ? triggerSummary : () => { console.warn('triggerSummary not defined'); });
+  $('trigger-summary-btn')?.addEventListener('click', triggerSummary);
 
-  if (typeof loadDetails === 'function') loadDetails(true);
-  if (typeof loadHarness === 'function') loadHarness(true);
+  load(true);
+  loadMemory();
   setInterval(() => {
-    if (typeof loadDetails === 'function') loadDetails(false);
-    if (typeof loadHarness === 'function') loadHarness(false);
+    load(false);
   }, 30000);
 
 }

@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nova Ops Dashboard • Tactical Command Center</title>
   <meta name="theme-color" content="#02040a" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2302040a'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%2300f0ff' stroke-width='6'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%2300ffaa'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1.16" />
+  <link rel="stylesheet" href="styles.css?v=1.30" />
 </head>
 <body>
   <!-- Sci-Fi Ambient Backdrops -->
@@ -20,7 +21,7 @@
     <aside class="sidebar" aria-label="Tactical Navigation">
       <div class="brand">
         <div class="eyebrow"><span class="pulse-ring"></span>Command Center</div>
-        <h1>Nova Ops <span class="version-badge">v1.16</span></h1>
+        <h1>Nova Ops <span class="version-badge">v1.30</span></h1>
       </div>
 
       <nav class="cyber-tabs-vertical" aria-label="Command Center Tabs">
@@ -49,15 +50,10 @@
           <span class="tab-icon">⏱</span>
           <span>Jobs & Runs</span>
         </button>
-        <button class="tab-btn" data-tab="memory">
+        <button class="tab-btn" data-tab="knowledge">
           <span class="tab-glow"></span>
           <span class="tab-icon">🧠</span>
-          <span>Daily Notes</span>
-        </button>
-        <button class="tab-btn" data-tab="system">
-          <span class="tab-glow"></span>
-          <span class="tab-icon">⚙️</span>
-          <span>System Docs</span>
+          <span>Knowledge</span>
         </button>
       </nav>
 
@@ -168,6 +164,13 @@
         </div>
 
         <div class="right">
+          <div class="card card-tech" data-nova-id="action-center">
+            <div class="section-head">
+              <h2>Action Center</h2>
+              <span>Prioritized from live telemetry</span>
+            </div>
+            <div id="action-center" class="action-center"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -188,48 +191,38 @@
           </details>
         </div>
 
-        <div class="card card-tech col-span-2 skill-registry-card" data-nova-id="skill-registry">
-          <details class="section-collapsible" id="skill-registry-details">
-            <summary class="section-head">
-              <h2>Nova Skill Registry</h2>
-              <span>Routing map · Eval flywheel · Skill governance</span>
-            </summary>
-            <div id="skill-registry" class="skill-registry"></div>
-          </details>
-        </div>
-
-        <div class="card card-tech col-span-2 agents-submenu-card" data-nova-id="agents-secondary-menu">
+        <div class="card card-tech col-span-2" data-nova-id="startup-loop">
           <div class="section-head">
-            <h2>Agent System Details</h2>
-            <span>Configured agents · Sessions · Background tasks</span>
+            <h2>Startup Delivery Loop</h2>
+            <span>PO · CTO · Dev · QA · SRE · Definition of Done</span>
           </div>
-
-          <div class="agents-submenu">
-            <details class="agents-submenu-item" data-nova-id="configured-agents">
-              <summary>
-                <span>Configured Agents</span>
-                <small>Workspace agent registry</small>
-              </summary>
-              <div id="configured-agents" class="agents-list agents-submenu-content"></div>
-            </details>
-
-            <details class="agents-submenu-item" data-nova-id="active-sessions">
-              <summary>
-                <span>Active Sessions</span>
-                <small>Direct and cron agent threads</small>
-              </summary>
-              <div id="active-sessions" class="sessions-list agents-submenu-content"></div>
-            </details>
-
-            <details class="agents-submenu-item" data-nova-id="active-tasks">
-              <summary>
-                <span>Running Background Tasks</span>
-                <small>Execution pressure and recent runs</small>
-              </summary>
-              <div id="active-tasks" class="tasks-list agents-submenu-content"></div>
-            </details>
-          </div>
+          <div id="startup-loop" class="startup-loop"></div>
         </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="auto-cron">
+          <div class="section-head">
+            <h2>Nova Auto-Cron</h2>
+            <span>Backlog picks · Sub-agent results · Quality gate</span>
+          </div>
+          <div id="auto-cron" class="auto-cron"></div>
+        </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="browser-runs">
+          <div class="section-head">
+            <h2>Browser Run Artifacts</h2>
+            <span>Session evidence · Tool calls · Screenshots · Result tails</span>
+          </div>
+          <div id="browser-runs" class="browser-runs"></div>
+        </div>
+
+        <div class="card card-tech col-span-2" data-nova-id="proposal-queue">
+          <div class="section-head">
+            <h2>Proposal Queue</h2>
+            <span>Ideas · Approval status · Startup conversion path</span>
+          </div>
+          <div id="proposal-queue" class="proposal-queue"></div>
+        </div>
+
       </div>
     </div>
 
@@ -289,14 +282,6 @@
           <div id="codex-quota" class="codex-quota"></div>
         </div>
 
-        <div class="card card-tech" data-nova-id="groq-quota">
-          <div class="section-head">
-            <h2>Groq Quota Usage</h2>
-            <span>Cheap Repo Reader · API Health · Local Usage</span>
-          </div>
-          <div id="groq-quota" class="codex-quota"></div>
-        </div>
-
         <div class="card card-tech" data-nova-id="gemma-quota">
           <div class="section-head">
             <h2>Gemma 4 31B Fallback</h2>
@@ -351,6 +336,14 @@
           <div id="ops-ledger" class="ops-ledger"></div>
         </div>
 
+        <div class="card card-tech col-span-2" data-nova-id="nova-events">
+          <div class="section-head">
+            <h2>Nova Event Journal</h2>
+            <span>Shared event truth for Nova Ops · Star Office · Startup Loop</span>
+          </div>
+          <div id="nova-events" class="nova-events"></div>
+        </div>
+
         <div class="card card-tech col-span-2" data-nova-id="alert-quality">
           <div class="section-head">
             <h2>Alert Quality Dashboard</h2>
@@ -369,9 +362,17 @@
       </div>
     </div>
 
-    <!-- Tab Panel: Daily Memory Notes -->
-    <div id="tab-memory" class="tab-panel">
-      <div class="layout">
+    <!-- Tab Panel: Knowledge -->
+    <div id="tab-knowledge" class="tab-panel">
+      <div class="layout-grid-2">
+        <div class="card card-tech col-span-2">
+          <div class="section-head">
+            <h2>Operational Knowledge</h2>
+            <span>Daily notes · Platform docs · Roadmap · Redacted status</span>
+          </div>
+          <p class="muted">Reference surfaces are grouped here so primary navigation stays focused on live operations.</p>
+        </div>
+
         <div class="left">
           <div class="card card-tech platform-card">
             <div class="section-head">
@@ -404,12 +405,7 @@
             <div id="trigger-summary-status" class="status-msg muted">Ready</div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Tab Panel: System Docs -->
-    <div id="tab-system" class="tab-panel">
-      <div class="layout">
         <div class="left">
           <div class="card card-tech platform-card">
             <div class="section-head">
@@ -430,9 +426,17 @@
           </div>
 
           <details class="card card-tech raw-details">
-            <summary>Raw OpenClaw Status <span class="toggle-indicator"></span></summary>
+            <summary>Detailed diagnostics policy <span class="toggle-indicator"></span></summary>
             <pre id="raw">—</pre>
           </details>
+
+          <div class="card card-tech" data-nova-id="classifier-stats">
+            <div class="section-head">
+              <h2>Classifier-Permission Shadow Audit</h2>
+              <span>PoC · Anthropic auto-mode pattern · Tier 1/2/3 + Stage 1/2 decisions</span>
+            </div>
+            <div id="classifier-stats" class="classifier-stats"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -441,7 +445,7 @@
   </div> <!-- /main-content -->
   </div> <!-- /app-container -->
 
-  <script src="app.js?v=1.16" defer></script>
+  <script src="app.js?v=1.30" defer></script>
 
   <!-- Interactive Command Center Scripts -->
   <script>
@@ -636,5 +640,31 @@
       }
     });
   </script>
+
+  <!-- Service Drill-Down Modal (Patch 1) -->
+  <div id="service-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="service-modal-title">
+    <div class="modal-content">
+      <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">×</button>
+      <div class="modal-header">
+        <div id="service-modal-status" class="dot"></div>
+        <h2 id="service-modal-title">Service Detail</h2>
+        <span id="service-modal-pill"></span>
+      </div>
+      <div class="modal-body">
+        <section class="modal-section">
+          <h3>Current status</h3>
+          <pre id="service-modal-detail" class="modal-code"></pre>
+        </section>
+        <section class="modal-section">
+          <h3>Recent guard events (<span id="service-modal-event-count">0</span>)</h3>
+          <div id="service-modal-events" class="modal-events"></div>
+        </section>
+        <section class="modal-section">
+          <h3>How to investigate</h3>
+          <pre class="modal-code" id="service-modal-cli"></pre>
+        </section>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
