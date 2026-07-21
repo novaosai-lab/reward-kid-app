@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# nova-gog-setup — one-shot Google Workspace OAuth setup for gogcli
+# Usage: nova-gog-setup <path-to-client_secret.json> [your-email]
+#
+# Pre-conditions:
+#   - gogcli installed (brew install openclaw/tap/gogcli)
+#   - Google Cloud project created with Desktop OAuth client JSON downloaded
+#   - 3 APIs enabled: Gmail, Calendar, Drive
+#   - OAuth consent screen: External + Published to In Production
+#   - Optional: GOG_KEYRING_BACKEND=file + GOG_KEYRING_PASSWORD set for cron use
+
+set -euo pipefail
+
+CLIENT_JSON="${1:-}"
+ACCOUNT_EMAIL="${2:-${GOG_ACCOUNT:-}}"
+
+if [ -z "$CLIENT_JSON" ] || [ ! -f "$CLIENT_JSON" ]; then
+  echo "❌ Usage: nova-gog-setup <path-to-client_secret.json> [your-email]"
+  echo "   Example: nova-gog-setup ~/Downloads/client_secret_abc123.json you@gmail.com"
+  exit 1
+fi
+
+# Load .env-gog if present (for cron use: GOG_KEYRING_BACKEND, GOG_KEYRING_PASSWORD)
+if [ -f "/Users/nova/.openclaw/workspace/.env-gog" ]; then
+  set -a; source "/Users/nova/.openclaw/workspace/.env-gog"; set +a
+  echo "✓ loaded .env-gog (keyring backend: ${GOG_KEYRING_BACKEND:-auto})"
+fi
+
+echo "=== Step 1/4: register OAuth client with gog ==="
+gog auth credentials "$CLIENT_JSON"
+
+if [ -z "$ACCOUNT_EMAIL" ]; then
+  echo ""
+  echo "❌ Need your Google account email to authorize."
+  echo "   Re-run with: nova-gog-setup $CLIENT_JSON you@gmail.com"
+  exit 1
+fi
+
+echo ""
+echo "=== Step 2/4: authorize $ACCOUNT_EMAIL (read-only scopes) ==="
+echo "   → Browser will open. Click 'Allow' on the consent screen."
+echo "   → Come back here when done."
+echo ""
+gog auth add "$ACCOUNT_EMAIL" \
+  --services gmail,calendar,drive \
+  --readonly
+
+echo ""
+echo "=== Step 3/4: doctor check ==="
+gog auth doctor --check
+
+echo ""
+echo "=== Step 4/4: smoke test ==="
+echo "   → gog --readonly calendar events --today --json"
+GOG_ACCOUNT="$ACCOUNT_EMAIL" gog --readonly --no-input --json calendar events --today 2>&1 | head -5 || echo "   (no events today — that's fine)"
+
+echo ""
+echo "✅ gog ready. Quick tests you can run:"
+echo "   export GOG_ACCOUNT=$ACCOUNT_EMAIL"
+echo "   gog --readonly calendar events --today --json"
+echo "   gog --readonly --json gmail search 'newer_than:7d' --max 5"
+echo ""
+echo "📦 For cron use: see /Users/nova/.openclaw/workspace/.env-gog.example"
