@@ -5,9 +5,49 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { execFile } = require('child_process');
+const { readHarnessSnapshot, toPublicHarnessSnapshot } = require('./lib/harness-snapshot');
+const { readTailLines } = require('./lib/bounded-tail');
+const {
+  atomicWritePrivateJson,
+  durationSetting,
+  sanitizeJobRunsSnapshot,
+  sanitizeStatusSnapshot,
+  snapshotFreshness,
+} = require('./lib/public-status');
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
+const CLAUDE_CONTEXT_DIR = path.join(PUBLIC, 'claude-context');
+const CLAUDE_CONTEXT_ENV = path.join(ROOT, 'data', '.env-claude-context');
+
+// Load Nova → Claude Code auth token from .env-claude-context (chmod 600).
+// Used to gate /claude-context/* so Cloudflare's AI-bot WAF (which blocks
+// `Anthropic/Claude` User-Agent) doesn't fire — Claude Code uses Bash + curl
+// with this token instead of WebFetch, since curl's UA bypasses the WAF.
+function loadClaudeContextToken() {
+  try {
+    const text = fs.readFileSync(CLAUDE_CONTEXT_ENV, 'utf8');
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const m = line.match(/^NOVA_CLAUDE_CONTEXT_TOKEN=(.+)$/);
+      if (m) return m[1].trim();
+    }
+  } catch {}
+  return process.env.NOVA_CLAUDE_CONTEXT_TOKEN || null;
+}
+const CLAUDE_CONTEXT_TOKEN = loadClaudeContextToken();
+
+function checkClaudeAuth(req, urlObj) {
+  if (!CLAUDE_CONTEXT_TOKEN) return false;
+  const auth = req.headers['authorization'] || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m && m[1].trim() === CLAUDE_CONTEXT_TOKEN) return true;
+  if ((req.headers['x-nova-token'] || '') === CLAUDE_CONTEXT_TOKEN) return true;
+  const qToken = urlObj.searchParams.get('token');
+  if (qToken && qToken === CLAUDE_CONTEXT_TOKEN) return true;
+  return false;
+}
 const WORKSPACE = '/Users/nova/.openclaw/workspace';
 const PORT = Number(process.env.NOVA_OPS_PORT || 18888);
 const BASE_PATH = '/novaops';
@@ -15,12 +55,29 @@ const OPENCLAW = '/opt/homebrew/bin/openclaw';
 const HARNESS = path.join(WORKSPACE, 'nova-harness', 'nova-harness');
 const SUPPORT_DIGEST_EXPORT = path.join(WORKSPACE, 'grafana-dashboards', 'export_support_digest_data.py');
 const SUPPORT_DIGEST_JSON = path.join(PUBLIC, 'data', 'support_digest.json');
-const STATUS_SNAPSHOT_JSON = path.join(PUBLIC, 'data', 'status_snapshot.json');
+const STATUS_SNAPSHOT_JSON = process.env.NOVA_OPS_STATUS_SNAPSHOT_JSON || '/Users/nova/.openclaw/state/nova-ops-dashboard/status_snapshot.json';
+const JOB_RUNS_SNAPSHOT_JSON = process.env.NOVA_OPS_JOB_RUNS_SNAPSHOT_JSON || '/Users/nova/.openclaw/state/nova-ops-dashboard/job_runs_snapshot.json';
+const TELEMETRY_REFRESH_INTERVAL_MS = durationSetting(process.env.NOVA_OPS_TELEMETRY_REFRESH_INTERVAL_MS, 60_000, 15_000);
+const STATUS_SNAPSHOT_STALE_MS = durationSetting(process.env.NOVA_OPS_STATUS_SNAPSHOT_STALE_MS, 120_000, 30_000);
+const JOB_RUNS_SNAPSHOT_STALE_MS = durationSetting(process.env.NOVA_OPS_JOB_RUNS_SNAPSHOT_STALE_MS, 300_000, 60_000);
+const TELEMETRY_PRODUCER_DISABLED = process.env.NOVA_OPS_DISABLE_TELEMETRY_PRODUCER === '1';
 const ACTIVE_WORK_MD = path.join(WORKSPACE, 'ACTIVE_WORK.md');
+const STARTUP_BACKLOG_JSON = path.join(WORKSPACE, '.gnap', 'startup-backlog.json');
+const STARTUP_TASKS_DIR = path.join(WORKSPACE, '.gnap', 'tasks');
+const AUTO_BACKLOG_JSON = path.join(WORKSPACE, 'nova-skill-os', 'backlog.json');
+const AUTO_STATE_JSON = '/Users/nova/.openclaw/state/auto-executor/state.json';
+const AUTO_RESULTS_DIR = '/Users/nova/.openclaw/state/auto-executor/results';
+const AUTO_SPAWN_QUEUE_DIR = '/Users/nova/.openclaw/state/auto-executor/spawn-queue';
+const AUTO_LOG = path.join(WORKSPACE, 'logs', 'auto-executor.log');
+const BROWSER_RUNS_DIR = '/Users/nova/.openclaw/state/browser-runs';
+const BROWSER_RUNS_INDEX_JSON = path.join(BROWSER_RUNS_DIR, 'index.json');
+const NOVA_EVENTS_JSONL = path.join(WORKSPACE, 'events', 'nova-events.jsonl');
+const NOVA_PROPOSALS_JSON = path.join(WORKSPACE, 'data', 'nova-proposals.json');
 const NOVA_SKILL_REGISTRY_SCRIPT = path.join(WORKSPACE, 'nova-skill-os', 'skill_registry.py');
 const NOVA_SKILL_REGISTRY_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'skill-registry.json');
 const NOVA_EVAL_FLYWHEEL_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'eval-flywheel.json');
 const NOVA_LATEST_EVAL_RESULT_JSON = path.join(WORKSPACE, 'nova-skill-os', 'out', 'latest-eval-result.json');
+const CLASSIFIER_DECISIONS_DIR = path.join(WORKSPACE, 'data', 'classifier-decisions');
 const TELEGRAM_BRIDGE_LOG = path.join(WORKSPACE, 'logs', 'telegram-bridge.out.log');
 const N8N_DIR = path.join(WORKSPACE, 'n8n');
 const OPENCLAW_CONFIG_JSON = '/Users/nova/.openclaw/openclaw.json';
@@ -40,7 +97,6 @@ const DISCORD_ORDER_SCRIPT = path.join(WORKSPACE, 'discord-alert-forwarder', 'fo
 const DISCORD_ORDER_STATE_JSON = '/Users/nova/.openclaw/state/discord-alert-forwarder/prod-order-monitor-state.json';
 const DISCORD_ORDER_OUT_LOG = '/tmp/openclaw-discord-prod-order-forwarder.out.log';
 const DISCORD_ORDER_JSONL = path.join(WORKSPACE, 'discord-alert-forwarder', 'data', 'prod_order_alerts.jsonl');
-const GROQ_KEY_FILE = '/Users/nova/.openclaw/secrets/cheap-repo-reader/groq-api-key.txt';
 const REPO_REVIEW_QUEUE_JSON = path.join(WORKSPACE, 'research', 'repo-review-queue', 'queue.json');
 const CHEAP_REPO_REVIEWS_DIR = path.join(WORKSPACE, 'research', 'cheap-repo-reviews');
 const VERIFICATION_DIR = path.join(WORKSPACE, 'outputs', 'verification');
@@ -301,6 +357,7 @@ async function handleServiceCLI() {
 
 const args = process.argv.slice(2);
 const isServiceCmd = args[0] === 'service' || ['install', 'uninstall', 'status', 'start', 'stop', 'restart'].includes(args[0]);
+const isTelemetryRefreshCmd = args[0] === 'refresh-telemetry';
 if (isServiceCmd) {
   handleServiceCLI().catch(e => {
     console.error(e);
@@ -322,18 +379,23 @@ const TTL = {
   workflows: 30000,
   codexQuota: 30000,
   gemmaQuota: 30000,
-  groqQuota: 30000,
   minimaxQuota: 30000,
   tokenSessions: 30000,
   contextBudget: 30000,
   jobRuns: 30000,
   opsLedger: 10000,
   alertQuality: 30000,
+  novaEvents: 5000,
+  proposals: 5000,
+  classifierStats: 5000,
   lifeCommand: 10000,
   teamControl: 10000,
   agents: 30000,
   activeTasks: 5000,
   activeSessions: 5000,
+  startup: 5000,
+  autoCron: 5000,
+  browserRuns: 5000,
 };
 
 const WEB_INVENTORY = [
@@ -495,7 +557,7 @@ const ALERT_ROUTES = [
 
 function run(cmd, args = [], timeout = 15000, options = {}) {
   return new Promise(resolve => {
-    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024, env: { ...process.env, ...(options.env || {}) } }, (error, stdout, stderr) => {
+    execFile(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, ...(options.env || {}) } }, (error, stdout, stderr) => {
       resolve({ ok: !error, code: error?.code ?? 0, stdout: stdout || '', stderr: stderr || '', output: `${stdout || ''}${stderr ? '\n' + stderr : ''}`.trim() });
     });
   });
@@ -527,18 +589,142 @@ async function cached(key, ttl, producer, force = false) {
   return pending;
 }
 
-function refreshInBackground(key, ttl, producer) {
-  cached(key, ttl, producer, true).catch(error => {
-    console.error(`background refresh failed for ${key}: ${error.message}`);
-  });
-}
-
 async function readJsonFile(file) {
   try {
     return JSON.parse(await fsp.readFile(file, 'utf8'));
   } catch {
     return null;
   }
+}
+
+async function readTextTail(file, lines = 20) {
+  try {
+    const text = await fsp.readFile(file, 'utf8');
+    return text.trim().split('\n').slice(-lines);
+  } catch {
+    return [];
+  }
+}
+
+async function listRecentFiles(dir, limit = 8, ext = '') {
+  try {
+    const entries = await fsp.readdir(dir, { withFileTypes: true });
+    const files = await Promise.all(entries
+      .filter(entry => entry.isFile() && (!ext || entry.name.endsWith(ext)))
+      .map(async entry => {
+        const file = path.join(dir, entry.name);
+        const stat = await fsp.stat(file);
+        return { name: entry.name, path: file, mtimeMs: stat.mtimeMs, size: stat.size };
+      }));
+    return files.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+async function collectAutoCron() {
+  const [backlog, state, logLines, resultFiles, spawnFiles] = await Promise.all([
+    readJsonFile(AUTO_BACKLOG_JSON),
+    readJsonFile(AUTO_STATE_JSON),
+    readTextTail(AUTO_LOG, 12),
+    listRecentFiles(AUTO_RESULTS_DIR, 8, '.md'),
+    listRecentFiles(AUTO_SPAWN_QUEUE_DIR, 8, '.json'),
+  ]);
+  const items = Array.isArray(backlog?.items) ? backlog.items : [];
+  const counts = items.reduce((acc, item) => {
+    const status = item.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const active = items
+    .filter(item => ['picked', 'in_progress', 'blocked', 'partial'].includes(item.status) || item.awaiting_human_review)
+    .sort((a, b) => String(b.completed_at || b.started_at || b.picked_at || b.added || '').localeCompare(String(a.completed_at || a.started_at || a.picked_at || a.added || '')))
+    .slice(0, 10);
+  const quality = {
+    reviewed: items.filter(item => item.quality_review).length,
+    downgraded: items.filter(item => item.quality_review && item.quality_review.status === 'partial').length,
+    weakDone: items.filter(item => item.status === 'done' && item.quality_review && item.quality_review.passed === false).length,
+  };
+  const spawnedToday = spawnFiles.filter(file => new Date(file.mtimeMs).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+  return {
+    generatedAt: new Date().toISOString(),
+    source: {
+      backlog: AUTO_BACKLOG_JSON,
+      state: AUTO_STATE_JSON,
+      log: AUTO_LOG,
+      resultsDir: AUTO_RESULTS_DIR,
+      spawnQueueDir: AUTO_SPAWN_QUEUE_DIR,
+    },
+    counts,
+    state: state || {},
+    summary: {
+      total: items.length,
+      pending: counts.pending || 0,
+      active: (counts.picked || 0) + (counts.in_progress || 0),
+      blocked: counts.blocked || 0,
+      done: counts.done || 0,
+      picksToday: state?.count_today || 0,
+      dailyPickLimit: 3,
+      spawnedToday,
+      openDoorCounter: state?.consecutive_done_without_review || 0,
+      openDoorThreshold: state?.open_door_threshold || 5,
+    },
+    quality,
+    active,
+    recentResults: resultFiles.map(file => ({ ...file, updatedAt: new Date(file.mtimeMs).toISOString() })),
+    recentSpawns: spawnFiles.map(file => ({ ...file, updatedAt: new Date(file.mtimeMs).toISOString() })),
+    logLines,
+  };
+}
+
+function isSafeBrowserRunId(id) {
+  return /^[A-Za-z0-9_-]{1,100}$/.test(String(id || ''));
+}
+
+async function collectBrowserRuns() {
+  const index = await readJsonFile(BROWSER_RUNS_INDEX_JSON);
+  const runs = Array.isArray(index?.runs) ? index.runs : [];
+  const items = await Promise.all(runs.slice(0, 12).map(async run => {
+    const id = String(run.id || '');
+    if (!isSafeBrowserRunId(id)) return null;
+    const runDir = path.join(BROWSER_RUNS_DIR, id);
+    const manifest = await readJsonFile(path.join(runDir, 'manifest.json'));
+    const resultTail = await readTextTail(path.join(runDir, 'result.md'), 8);
+    return {
+      ...run,
+      manifestOk: Boolean(manifest),
+      status: manifest?.status || run.status || 'unknown',
+      title: manifest?.title || run.title || id,
+      url: manifest?.url || run.url || '',
+      updatedAt: manifest?.updatedAt || run.updatedAt,
+      toolCallCount: Array.isArray(manifest?.toolCalls) ? manifest.toolCalls.length : run.toolCallCount || 0,
+      screenshotCount: Array.isArray(manifest?.screenshots) ? manifest.screenshots.length : run.screenshotCount || 0,
+      resultTail,
+    };
+  }));
+  const cleanItems = items.filter(Boolean);
+  const counts = cleanItems.reduce((acc, run) => {
+    const status = run.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    generatedAt: new Date().toISOString(),
+    source: {
+      dir: BROWSER_RUNS_DIR,
+      index: BROWSER_RUNS_INDEX_JSON,
+      cli: path.join(WORKSPACE, 'bin', 'nova-browser-artifact'),
+    },
+    summary: {
+      total: runs.length,
+      shown: cleanItems.length,
+      done: counts.done || 0,
+      failed: counts.failed || 0,
+      live: counts.live || 0,
+      partial: counts.partial || 0,
+    },
+    items: cleanItems,
+  };
 }
 
 // Newer OpenClaw versions (2026.5+) migrate the auth profile store into the
@@ -632,6 +818,190 @@ async function collectActiveWork() {
   };
 }
 
+async function collectStartupLoop() {
+  const backlog = await readJsonFile(STARTUP_BACKLOG_JSON) || { items: [] };
+  const items = Array.isArray(backlog.items) ? backlog.items : [];
+  const counts = items.reduce((acc, item) => {
+    const status = item.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const tasks = await Promise.all(items.map(async item => {
+    const taskId = item.id;
+    const taskDir = taskId ? path.join(STARTUP_TASKS_DIR, taskId) : '';
+    const meta = taskId ? await readJsonFile(path.join(taskDir, 'task.json')) : null;
+    const artifacts = taskId ? await Promise.all([
+      'task.brief.md',
+      'delivery.plan.md',
+      'architecture.review.md',
+      'implementation.report.md',
+      'qa.verdict.md',
+      'release.checklist.md',
+      'definition-of-done.md',
+    ].map(async name => {
+      try {
+        const stat = await fsp.stat(path.join(taskDir, name));
+        return { name, exists: true, updatedAt: stat.mtime.toISOString() };
+      } catch {
+        return { name, exists: false };
+      }
+    })) : [];
+    const requiredArtifacts = meta?.artifacts || [];
+    const missingRequired = requiredArtifacts.filter(name => !artifacts.find(a => a.name === name && a.exists));
+    return {
+      ...item,
+      meta,
+      artifacts,
+      requiredArtifacts,
+      dodReady: missingRequired.length === 0 && artifacts.some(a => a.name === 'definition-of-done.md' && a.exists),
+      missingRequired,
+      path: taskId ? path.join('.gnap', 'tasks', taskId) : '',
+    };
+  }));
+  const order = { now: 0, blocked: 1, next: 2, later: 3, done: 4 };
+  tasks.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  return {
+    generatedAt: new Date().toISOString(),
+    source: STARTUP_BACKLOG_JSON.replace(WORKSPACE + '/', ''),
+    updatedAt: backlog.updated_at || null,
+    counts,
+    total: items.length,
+    tasks: tasks.slice(0, 12),
+    commands: [
+      'bin/nova-startup plan "<title>" --type frontend',
+      'bin/nova-startup review',
+      'bin/nova-startup dod <task-id>',
+    ],
+  };
+}
+
+async function collectNovaEvents(limit = 80) {
+  let lines = [];
+  try {
+    const text = await fsp.readFile(NOVA_EVENTS_JSONL, 'utf8');
+    lines = text.split('\n').filter(Boolean);
+  } catch {}
+  const events = [];
+  for (const line of lines.slice(-limit * 2)) {
+    try {
+      const event = JSON.parse(line);
+      events.push(event);
+    } catch {}
+  }
+  events.sort((a, b) => Date.parse(b.ts || 0) - Date.parse(a.ts || 0));
+  const recent = events.slice(0, limit);
+  const summary = recent.reduce((acc, event) => {
+    const status = event.status || 'info';
+    acc[status] = (acc[status] || 0) + 1;
+    acc.total += 1;
+    return acc;
+  }, { total: 0, healthy: 0, warning: 0, critical: 0, info: 0 });
+  return {
+    generatedAt: new Date().toISOString(),
+    source: NOVA_EVENTS_JSONL.replace(WORKSPACE + '/', ''),
+    exists: fs.existsSync(NOVA_EVENTS_JSONL),
+    summary,
+    events: recent,
+  };
+}
+
+async function collectProposals() {
+  const data = await readJsonFile(NOVA_PROPOSALS_JSON) || { version: 1, items: [] };
+  const items = Array.isArray(data.items) ? data.items : [];
+  const summary = items.reduce((acc, item) => {
+    const status = item.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
+    acc.total += 1;
+    return acc;
+  }, { total: 0, proposed: 0, accepted: 0, rejected: 0, deferred: 0 });
+  const priorityOrder = { P0: 0, P1: 1, P2: 2, P3: 3 };
+  const statusOrder = { accepted: 0, proposed: 1, deferred: 2, rejected: 3 };
+  items.sort((a, b) =>
+    (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) ||
+    (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9) ||
+    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  );
+  return {
+    generatedAt: new Date().toISOString(),
+    source: NOVA_PROPOSALS_JSON.replace(WORKSPACE + '/', ''),
+    updatedAt: data.updatedAt || null,
+    summary,
+    items,
+  };
+}
+
+async function collectClassifierStats(limit = 50) {
+  // Read append-only JSONL audit log from classifier-shadow (PoC)
+  let allDecisions = [];
+  try {
+    if (!fs.existsSync(CLASSIFIER_DECISIONS_DIR)) {
+      return {
+        generatedAt: new Date().toISOString(),
+        source: 'data/classifier-decisions/',
+        exists: false,
+        summary: { total: 0, tier1: 0, tier2: 0, tier3: 0, allowStage1: 0, allowStage2: 0, allowNoClassifier: 0, blockShadow: 0, flagShadow: 0, failSoft: 0 },
+        recent: [],
+      };
+    }
+    const files = (await fsp.readdir(CLASSIFIER_DECISIONS_DIR))
+      .filter(f => f.endsWith('.jsonl'))
+      .sort();
+    for (const file of files) {
+      const text = await fsp.readFile(path.join(CLASSIFIER_DECISIONS_DIR, file), 'utf8');
+      const lines = text.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          allDecisions.push(JSON.parse(line));
+        } catch {}
+      }
+    }
+    allDecisions.sort((a, b) => Date.parse(b.ts || 0) - Date.parse(a.ts || 0));
+  } catch (e) {
+    return {
+      generatedAt: new Date().toISOString(),
+      source: 'data/classifier-decisions/',
+      exists: false,
+      error: e.message,
+      summary: { total: 0 },
+      recent: [],
+    };
+  }
+
+  const summary = allDecisions.reduce((acc, d) => {
+    acc.total = (acc.total || 0) + 1;
+    const tier = d.tier;
+    if (tier === 1) acc.tier1 = (acc.tier1 || 0) + 1;
+    else if (tier === 2) acc.tier2 = (acc.tier2 || 0) + 1;
+    else if (tier === 3) acc.tier3 = (acc.tier3 || 0) + 1;
+    const action = d.shadow_action || 'unknown';
+    if (action === 'ALLOW_STAGE1') acc.allowStage1 = (acc.allowStage1 || 0) + 1;
+    else if (action === 'ALLOW_STAGE2') acc.allowStage2 = (acc.allowStage2 || 0) + 1;
+    else if (action === 'ALLOW_NO_CLASSIFIER') acc.allowNoClassifier = (acc.allowNoClassifier || 0) + 1;
+    else if (action === 'BLOCK_SHADOW') acc.blockShadow = (acc.blockShadow || 0) + 1;
+    else if (action === 'FLAG_SHADOW') acc.flagShadow = (acc.flagShadow || 0) + 1;
+    else acc.failSoft = (acc.failSoft || 0) + 1;
+    return acc;
+  }, { total: 0, tier1: 0, tier2: 0, tier3: 0, allowStage1: 0, allowStage2: 0, allowNoClassifier: 0, blockShadow: 0, flagShadow: 0, failSoft: 0 });
+
+  const recent = allDecisions.slice(0, limit).map(d => ({
+    ts: d.ts,
+    tool: d.tool,
+    args_preview: d.args_preview,
+    tier: d.tier,
+    shadow_action: d.shadow_action,
+    stage1_reason: d.stage1?.reason,
+    stage2_verdict: d.stage2?.verdict,
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'data/classifier-decisions/',
+    exists: true,
+    summary,
+    recent,
+  };
+}
+
 async function switchCodexAccount(accountId, restartGateway = true) {
   if (!CODEX_ACCOUNTS.includes(accountId)) {
     throw new Error('Unsupported Codex account: ' + accountId);
@@ -668,8 +1038,8 @@ async function switchCodexAccount(accountId, restartGateway = true) {
 
 async function tail(file, lines = 40) {
   try {
-    const txt = await fsp.readFile(file, 'utf8');
-    return txt.trim().split('\n').slice(-lines).map(line => {
+    const tailLines = await readTailLines(file, lines);
+    return tailLines.map(line => {
       try { return JSON.parse(line); } catch { return { ts: '', event: 'raw', output: line }; }
     });
   } catch { return []; }
@@ -915,13 +1285,7 @@ async function collectAlertRoutes() {
 }
 
 async function collectHarness() {
-  const h = await run(HARNESS, ['check', '--json', '--no-tts'], 240000, { env: { NOVA_HARNESS_SKIP_DASHBOARD: '1' } });
-  try {
-    const parsed = JSON.parse(h.output);
-    if (!h.ok && !parsed.error) parsed.error = 'harness reported failure';
-    return parsed;
-  }
-  catch (e) { return { overall: h.ok ? 'warning' : 'critical', failed: h.ok ? 0 : 1, warned: h.ok ? 1 : 0, checks: [], error: `Could not parse harness JSON: ${e.message}; ${h.output || 'no output'}` }; }
+  return toPublicHarnessSnapshot(await readHarnessSnapshot());
 }
 
 async function collectSupportDigest(refresh = false) {
@@ -1146,8 +1510,12 @@ async function collectAgents() {
 
 async function collectActiveTasks() {
   const result = await run(OPENCLAW, ['tasks', 'list', '--json'], 15000);
-  if (!result.ok) throw new Error('Failed to run tasks list: ' + result.output);
-  return parseJsonOutput(result.stdout || result.output);
+  try {
+    return parseJsonOutput(result.stdout || result.output);
+  } catch (parseError) {
+    if (!result.ok) throw new Error('Failed to run tasks list: ' + (parseError.message || result.output));
+    throw parseError;
+  }
 }
 
 async function collectActiveSessions() {
@@ -1454,6 +1822,129 @@ async function collectTeamControl() {
   };
 }
 
+function normalizeAttention(item = {}) {
+  if (item.status === 'needs_approval' || item.approvalRequired) return 'approval';
+  if (item.status === 'blocked' || item.status === 'failed') return 'failed';
+  if (item.status === 'running') return 'active';
+  if (item.status === 'done' && (!Array.isArray(item.evidence) || item.evidence.length === 0)) return 'no_evidence';
+  return 'none';
+}
+
+function normalizeRisk(item = {}) {
+  const raw = String(item.risk || '').toLowerCase();
+  if (/production|prod/.test(raw)) return 'production';
+  if (/credential|secret|token/.test(raw)) return 'credential';
+  if (/destructive|delete|remove/.test(raw)) return 'destructive';
+  if (/external|send|publish/.test(raw)) return 'external';
+  if (/paid|billing/.test(raw)) return 'paid';
+  return raw || 'local';
+}
+
+function phaseFromStatus(status = '') {
+  if (status === 'queued' || status === 'assigned') return 'plan';
+  if (status === 'running' || status === 'handoff') return 'implement';
+  if (status === 'verification' || status === 'quality_review') return 'verify';
+  if (status === 'done') return 'summarize';
+  if (status === 'blocked' || status === 'needs_approval') return 'waiting';
+  return 'explore';
+}
+
+async function collectCommandCenter() {
+  const team = await collectTeamControl();
+  const runtime = team.runtime || {};
+  const runtimeSummary = runtime.summary || {};
+  const queue = Array.isArray(runtime.queue) ? runtime.queue : [];
+  const sessions = Array.isArray(team.live?.sessions) ? team.live.sessions : [];
+  const reports = Array.isArray(team.reports) ? team.reports : [];
+
+  const queueAgents = queue.slice(0, 12).map(task => {
+    const status = task.status || 'unknown';
+    const evidence = Array.isArray(task.evidence) ? task.evidence : [];
+    return {
+      id: task.taskId || task.id || task.title || 'runtime-task',
+      role: task.assignedRole || 'Worker',
+      state: status,
+      phase: phaseFromStatus(status),
+      taskId: task.taskId || task.id || '',
+      title: task.title || task.objective || 'Untitled runtime task',
+      attention: normalizeAttention(task),
+      risk: normalizeRisk(task),
+      ageMs: task.updatedAt ? Date.now() - Date.parse(task.updatedAt) : null,
+      model: task.spawn_model || task.model || '',
+      evidence: evidence.slice(0, 4),
+    };
+  });
+
+  const sessionAgents = sessions.slice(0, Math.max(0, 12 - queueAgents.length)).map(session => ({
+    id: session.key || session.id || session.session || 'session',
+    role: session.kind === 'cron' ? 'Cron Agent' : session.kind === 'direct' ? 'Direct Agent' : 'Agent',
+    state: session.age === 'just now' ? 'running' : 'idle',
+    phase: session.kind === 'cron' ? 'summarize' : 'waiting',
+    taskId: session.key || '',
+    title: session.summary || session.key || 'OpenClaw session',
+    attention: 'none',
+    risk: 'local',
+    ageMs: null,
+    model: session.model || '',
+    evidence: [],
+  }));
+
+  const agents = [...queueAgents, ...sessionAgents];
+  const approvals = queue
+    .filter(task => task.status === 'needs_approval' || task.approvalRequired)
+    .slice(0, 8)
+    .map(task => ({
+      id: task.taskId || task.id || task.title,
+      title: task.title || task.objective || 'Approval required',
+      role: task.assignedRole || 'Worker',
+      risk: normalizeRisk(task),
+      reason: task.block_reason || task.objective || task.nextAction || 'Waiting for human approval.',
+      evidence: Array.isArray(task.evidence) ? task.evidence.slice(0, 3) : [],
+    }));
+
+  const failedReports = reports.filter(report => !report.passed);
+  const blocked = (runtimeSummary.blocked || 0) + failedReports.length;
+  const posture = approvals.length ? 'needs_approval' : blocked ? 'blocked' : (runtimeSummary.running || team.summary?.runningTasks) ? 'watch' : 'healthy';
+  const nextActions = [
+    approvals.length ? 'Review approval inbox before starting more agent work.' : null,
+    blocked ? 'Open failed or blocked items and inspect evidence before retry.' : null,
+    !agents.length ? 'No active fleet telemetry yet; keep Command Center in read-only monitor mode.' : null,
+    'Keep third-party orchestration tools reference-only until source, license, and telemetry are reviewed.',
+  ].filter(Boolean);
+
+  return {
+    ...team,
+    generatedAt: new Date().toISOString(),
+    mode: 'command center read-only mvp',
+    commandCenter: {
+      posture,
+      summary: {
+        agents: agents.length,
+        activeAgents: agents.filter(agent => ['running', 'handoff', 'verification', 'quality_review'].includes(agent.state)).length,
+        runningTasks: runtimeSummary.running || team.summary?.runningTasks || 0,
+        pendingApprovals: approvals.length,
+        evidenceReports: reports.length,
+        failedReports: failedReports.length,
+      },
+      agents,
+      approvals,
+      nextActions,
+      latestEvidence: reports.slice(0, 6).map(report => ({
+        title: report.taskId || report.file,
+        path: report.path,
+        passed: Boolean(report.passed),
+        generatedAt: report.generatedAt,
+      })),
+      safety: [
+        'read-only by default',
+        'external/destructive/credential/paid/production actions require approval',
+        'done requires evidence or explicit verification note',
+        'third-party systems remain reference-only for this MVP',
+      ],
+    },
+  };
+}
+
 async function collectJobRuns() {
   const [cronRaw, harness, repoRuns] = await Promise.all([
     run(OPENCLAW, ['cron', 'list'], 15000),
@@ -1462,7 +1953,16 @@ async function collectJobRuns() {
   ]);
 
   const cronJobs = summarizeCronJobs(cronRaw.output);
-  const harnessStatus = harnessStatusToHealth(harness.overall);
+  const snapshotAvailable = harness.snapshot?.available === true;
+  const snapshotStale = snapshotAvailable && harness.snapshot?.stale === true;
+  const harnessStatus = !snapshotAvailable
+    ? 'unknown'
+    : snapshotStale
+      ? 'warning'
+      : harnessStatusToHealth(harness.overall);
+  const snapshotEvidence = !snapshotAvailable
+    ? 'snapshot unavailable'
+    : `${snapshotStale ? 'stale' : 'fresh'} snapshot · age ${harness.snapshot?.ageMs ?? 'unknown'}ms`;
   const jobs = [
     ...cronJobs,
     {
@@ -1471,10 +1971,10 @@ async function collectJobRuns() {
       source: 'local harness',
       category: 'quality gate',
       status: harnessStatus,
-      statusLabel: (harness.overall || 'unknown').toUpperCase(),
-      schedule: 'Manual / LaunchAgent / dashboard refresh',
+      statusLabel: !snapshotAvailable ? 'NO SNAPSHOT' : `${(harness.overall || 'unknown').toUpperCase()}${snapshotStale ? ' · STALE' : ''}`,
+      schedule: 'Explicit: bin/nova-harness-eval-run',
       nextRunAt: '',
-      evidence: (harness.checks || []).length + ' checks · ' + (harness.failed || 0) + ' failed · ' + (harness.warned || 0) + ' warnings',
+      evidence: (harness.failed || 0) + ' failed · ' + (harness.warned || 0) + ' warnings · ' + snapshotEvidence,
     },
     {
       id: 'repo-review',
@@ -1496,11 +1996,11 @@ async function collectJobRuns() {
     source: 'local harness',
     title: 'Latest dashboard quality snapshot',
     status: harnessStatus,
-    statusLabel: harness.overall || 'unknown',
+    statusLabel: !snapshotAvailable ? 'snapshot unavailable' : `${harness.overall || 'unknown'}${snapshotStale ? ' · stale' : ''}`,
     startedAt: harness.generated_at || harness.generatedAt || '',
     completedAt: harness.generated_at || harness.generatedAt || '',
-    durationLabel: (harness.checks || []).length + ' checks',
-    evidence: harness.error || ((harness.failed || 0) + ' failed · ' + (harness.warned || 0) + ' warnings'),
+    durationLabel: 'aggregate snapshot',
+    evidence: harness.error || ((harness.failed || 0) + ' failed · ' + (harness.warned || 0) + ' warnings · ' + snapshotEvidence),
   };
 
   const runs = [harnessRun, ...repoRuns].slice(0, 30);
@@ -1538,15 +2038,6 @@ function fileInfo(file) {
     };
   } catch {
     return { exists: false, path: file, mtime: '', ageMs: null, sizeBytes: 0 };
-  }
-}
-
-async function readTailLines(file, limit = 20) {
-  try {
-    const text = await fsp.readFile(file, 'utf8');
-    return text.split('\n').filter(Boolean).slice(-limit);
-  } catch {
-    return [];
   }
 }
 
@@ -2020,10 +2511,104 @@ async function collectAlertQuality() {
 }
 
 async function collectAndPersistStatus() {
-  const value = await collect();
-  await fsp.mkdir(path.dirname(STATUS_SNAPSHOT_JSON), { recursive: true }).catch(() => {});
-  await fsp.writeFile(STATUS_SNAPSHOT_JSON, JSON.stringify(value), 'utf8').catch(() => {});
+  const value = sanitizeStatusSnapshot(await collect());
+  await atomicWritePrivateJson(STATUS_SNAPSHOT_JSON, value);
   return value;
+}
+
+async function collectAndPersistJobRuns() {
+  const value = sanitizeJobRunsSnapshot(await collectJobRuns());
+  await atomicWritePrivateJson(JOB_RUNS_SNAPSHOT_JSON, value);
+  return value;
+}
+
+function unavailableStatusSnapshot() {
+  return {
+    schemaVersion: 2,
+    redacted: true,
+    generatedAt: '',
+    overall: 'warning',
+    summary: {
+      sessions: 'snapshot unavailable',
+      tasks: 'snapshot unavailable',
+      heartbeat: 'snapshot unavailable',
+      guardChecks: 0,
+      recentRestarts: 0,
+      launcherWatchdog: { status: 'unknown', log: { exists: false, mtime: '', ageMs: null, sizeBytes: 0 } },
+    },
+    services: [{ name: 'Dashboard telemetry snapshot', status: 'warning', detail: 'Background snapshot is not available yet' }],
+    channels: [],
+    docker: [],
+    guard: { recent: [], restarts: [] },
+    harness: { schemaVersion: 1, generatedAt: '', overall: 'unknown', failed: 0, warned: 0, deferred: true },
+    roadmap: [],
+    mode: 'snapshot-only',
+    stale: true,
+    cached: true,
+    cacheAgeMs: null,
+    snapshot: snapshotFreshness(null, STATUS_SNAPSHOT_STALE_MS),
+  };
+}
+
+function unavailableJobRunsSnapshot() {
+  return {
+    schemaVersion: 1,
+    redacted: true,
+    generatedAt: '',
+    source: 'background telemetry snapshot',
+    mode: 'snapshot-only',
+    summary: { jobs: 0, runs: 0, healthy: 0, warning: 0, critical: 0, unknown: 0 },
+    jobs: [],
+    runs: [],
+    stale: true,
+    cached: true,
+    cacheAgeMs: null,
+    snapshot: snapshotFreshness(null, JOB_RUNS_SNAPSHOT_STALE_MS),
+  };
+}
+
+async function readStatusSnapshotForApi() {
+  const raw = await readJsonFile(STATUS_SNAPSHOT_JSON);
+  if (!raw) return unavailableStatusSnapshot();
+  const snapshot = snapshotFreshness(raw, STATUS_SNAPSHOT_STALE_MS);
+  const value = sanitizeStatusSnapshot(raw);
+  return { ...value, generatedAt: snapshot.generatedAt, mode: 'snapshot-only', stale: snapshot.stale, cached: true, cacheAgeMs: snapshot.ageMs, snapshot };
+}
+
+async function readJobRunsSnapshotForApi() {
+  const raw = await readJsonFile(JOB_RUNS_SNAPSHOT_JSON);
+  if (!raw) return unavailableJobRunsSnapshot();
+  const snapshot = snapshotFreshness(raw, JOB_RUNS_SNAPSHOT_STALE_MS);
+  const value = sanitizeJobRunsSnapshot(raw);
+  return { ...value, generatedAt: snapshot.generatedAt, stale: snapshot.stale, cached: true, cacheAgeMs: snapshot.ageMs, snapshot };
+}
+
+let telemetryRefreshPending = null;
+async function refreshTelemetrySnapshots() {
+  if (telemetryRefreshPending) return telemetryRefreshPending;
+  telemetryRefreshPending = Promise.allSettled([
+    collectAndPersistStatus(),
+    collectAndPersistJobRuns(),
+  ]).then(results => {
+    const names = ['status', 'jobRuns'];
+    const outputs = Object.fromEntries(results.map((result, index) => [names[index], result.status === 'fulfilled'
+      ? { ok: true }
+      : { ok: false, error: result.reason?.message || String(result.reason || 'unknown error') }]));
+    return { ok: results.every(result => result.status === 'fulfilled'), generatedAt: new Date().toISOString(), outputs };
+  }).finally(() => {
+    telemetryRefreshPending = null;
+  });
+  return telemetryRefreshPending;
+}
+
+function startTelemetryProducer() {
+  if (TELEMETRY_PRODUCER_DISABLED) return;
+  const refresh = () => refreshTelemetrySnapshots().then(result => {
+    if (!result.ok) console.error(`telemetry snapshot refresh degraded: ${JSON.stringify(result.outputs)}`);
+  }).catch(error => console.error(`telemetry snapshot refresh failed: ${error.message}`));
+  refresh();
+  const timer = setInterval(refresh, TELEMETRY_REFRESH_INTERVAL_MS);
+  timer.unref();
 }
 
 async function collectGrafanaMcp() {
@@ -2447,44 +3032,6 @@ async function readCodexRealtimeLimit(config, accountId, codexHome = '') {
   return normalizeCodexRealtimeLimit(await requestCodexAppServerJson(request));
 }
 
-function groqEmptyUsage(configured = false) {
-  return {
-    provider: 'Groq',
-    accountId: 'groq:cheap-repo-reader',
-    configured,
-    status: configured ? 'healthy' : 'warning',
-    statusLabel: configured ? 'Key configured' : 'Missing key',
-    keyFile: GROQ_KEY_FILE.replace('/Users/nova/', '~/'),
-    keyMode: '',
-    model: 'llama-3.1-8b-instant',
-    limitLabel: 'Per-model guide: 30 RPM · 14,400 RPD',
-    limitKnown: false,
-    realtimeLimit: {
-      generatedAt: '',
-      primary: null,
-      secondary: null,
-    },
-    usage24h: { calls: 0, completed: 0, failed: 0, pending: 0 },
-    usage7d: { calls: 0, completed: 0, failed: 0, pending: 0 },
-    latestCallAt: '',
-    reviewArtifacts7d: 0,
-    models: { reachable: false, active: 0, region: '', sample: [] },
-    evidence: 'Groq API probe + local cheap repo review queue/artifacts',
-  };
-}
-
-function groqUsageWindow(calls, limit, label) {
-  const usedPercent = limit > 0 ? Math.min(100, (calls / limit) * 100) : null;
-  return {
-    label,
-    usedPercent,
-    remainingPercent: usedPercent == null ? null : Math.max(0, 100 - usedPercent),
-    used: calls,
-    limit,
-    resetsAt: '',
-  };
-}
-
 function requestJson(url, headers = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, { method: 'GET', headers }, res => {
@@ -2712,102 +3259,6 @@ async function collectMinimaxQuota() {
     note: notes.length
       ? notes.join(' ')
       : 'MiniMax quota is read from the Token Plan remains API through the OpenClaw OAuth profile. Access tokens are kept redacted; the card shows only plan, expiry, quota window, and local Nova usage.',
-    items: [item],
-  };
-}
-
-async function collectGroqQuota() {
-  const now = Date.now();
-  const dayAgo = now - 24 * 60 * 60 * 1000;
-  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const minuteAgo = now - 60 * 1000;
-  const item = groqEmptyUsage(fs.existsSync(GROQ_KEY_FILE));
-  const notes = [];
-  let groqCalls1m = 0;
-
-  if (item.configured) {
-    try {
-      const st = await fsp.stat(GROQ_KEY_FILE);
-      item.keyMode = (st.mode & 0o777).toString(8);
-      if (item.keyMode !== '600') {
-        item.status = 'warning';
-        item.statusLabel = 'Key present · mode check';
-        notes.push('Groq key file should stay mode 600; current mode is ' + item.keyMode + '.');
-      }
-    } catch (e) {
-      item.status = 'warning';
-      item.statusLabel = 'Key stat unavailable';
-      notes.push('Could not stat Groq key file: ' + (e?.message || String(e)));
-    }
-
-    try {
-      const apiKey = (await fsp.readFile(GROQ_KEY_FILE, 'utf8')).trim();
-      const probe = await requestJson('https://api.groq.com/openai/v1/models', {
-        Authorization: 'Bearer ' + apiKey,
-        'User-Agent': 'NovaOpsDashboard/1.0',
-      });
-      const models = Array.isArray(probe.data?.data) ? probe.data.data : [];
-      item.models = {
-        reachable: true,
-        active: models.filter(model => model.active !== false).length,
-        region: String(probe.headers['x-groq-region'] || ''),
-        sample: models.slice(0, 4).map(model => model.id).filter(Boolean),
-      };
-      item.limitKnown = true;
-      item.realtimeLimit.generatedAt = new Date().toISOString();
-      if (item.status !== 'warning') item.statusLabel = 'API reachable';
-    } catch (e) {
-      item.status = 'critical';
-      item.statusLabel = 'API probe failed';
-      notes.push('Groq API probe failed: ' + (e?.message || String(e)));
-    }
-  }
-
-  const queue = await readJsonFile(REPO_REVIEW_QUEUE_JSON);
-  const entries = Array.isArray(queue?.jobs) ? queue.jobs : Array.isArray(queue?.items) ? queue.items : Array.isArray(queue?.queue) ? queue.queue : [];
-  for (const entry of entries) {
-    if (entry.provider !== 'groq') continue;
-    const ts = parseEventTimestamp(entry.updatedAt || entry.completedAt || entry.createdAt || entry.enqueuedAt || '');
-    if (Number.isFinite(ts)) {
-      if (!item.latestCallAt || ts > Date.parse(item.latestCallAt)) item.latestCallAt = new Date(ts).toISOString();
-      if (ts >= minuteAgo) groqCalls1m += 1;
-      const bucket = ts >= dayAgo ? item.usage24h : null;
-      const bucket7d = ts >= weekAgo ? item.usage7d : null;
-      for (const target of [bucket, bucket7d].filter(Boolean)) {
-        target.calls += 1;
-        const status = String(entry.status || '').toLowerCase();
-        if (status === 'completed' || status === 'done' || entry.reviewPath) target.completed += 1;
-        else if (status === 'failed' || status === 'blocked' || status === 'error') target.failed += 1;
-        else target.pending += 1;
-      }
-    }
-  }
-
-  try {
-    const files = await fsp.readdir(CHEAP_REPO_REVIEWS_DIR);
-    for (const file of files) {
-      if (!file.startsWith('groq-') || !file.endsWith('.md')) continue;
-      const st = await fsp.stat(path.join(CHEAP_REPO_REVIEWS_DIR, file));
-      const ts = st.mtimeMs;
-      if (ts >= weekAgo) item.reviewArtifacts7d += 1;
-      if (ts >= minuteAgo) groqCalls1m += 1;
-      if (!item.latestCallAt || ts > Date.parse(item.latestCallAt)) item.latestCallAt = new Date(ts).toISOString();
-    }
-  } catch {}
-
-  item.realtimeLimit.primary = groqUsageWindow(item.usage24h.calls, 14400, 'daily request guide');
-  item.realtimeLimit.secondary = groqUsageWindow(groqCalls1m, 30, 'per-minute burst guide');
-  item.realtimeLimit.generatedAt = new Date().toISOString();
-  item.limitLabel = item.configured
-    ? item.limitLabel + (item.models.region ? ' · region ' + item.models.region : '')
-    : 'Groq key unavailable';
-
-  return {
-    generatedAt: new Date().toISOString(),
-    source: 'groq-models-api + repo-review-queue',
-    note: notes.length
-      ? notes.join(' ')
-      : 'Groq does not expose account remaining quota through the OpenAI-compatible API here; this card shows key/API health plus local Nova usage against the documented free-tier request guides.',
     items: [item],
   };
 }
@@ -3082,13 +3533,11 @@ async function collectCodexQuota() {
 }
 
 async function collect() {
-  const [status, gatewayHealth, gatewayStatus, nodeStatus, tasks, cron, docker, readyz] = await Promise.all([
+  const [status, gatewayHealth, gatewayStatus, nodeStatus, docker, readyz] = await Promise.all([
     run(OPENCLAW, ['status'], 25000),
     run(OPENCLAW, ['gateway', 'health'], 15000),
     run(OPENCLAW, ['gateway', 'status'], 15000),
     run(OPENCLAW, ['node', 'status'], 15000),
-    run(OPENCLAW, ['tasks', 'list'], 15000),
-    run(OPENCLAW, ['cron', 'list'], 15000),
     run('/usr/local/bin/docker', ['ps', '--format', '{{.Names}}|{{.Status}}|{{.Ports}}'], 8000),
     getReadyz(),
   ]);
@@ -3140,7 +3589,7 @@ async function collect() {
     overall: services.some(s => s.status === 'critical') ? 'critical' : services.some(s => s.status === 'warning') ? 'warning' : 'healthy',
     summary: {
       sessions: sessionsMatch?.[1]?.split('·')?.[0]?.trim() || 'see raw status',
-      tasks: tasksMatch?.[1]?.split('·')?.[0]?.trim() || (tasks.ok ? 'task command ok' : 'task command unavailable'),
+      tasks: tasksMatch?.[1]?.split('·')?.[0]?.trim() || 'task summary unavailable',
       heartbeat: heartbeatMatch?.[1]?.trim() || 'unknown',
       guardChecks: healthChecks.length,
       recentRestarts: restarts.length,
@@ -3153,13 +3602,6 @@ async function collect() {
     services,
     channels,
     docker: dockerRows,
-    raw: {
-      openclawStatus: status.output,
-      tasks: tasks.output,
-      cron: cron.output,
-      gatewayStatus: gatewayStatus.output,
-      nodeStatus: nodeStatus.output,
-    },
     guard: { recent: guardLog.slice(-12).reverse(), restarts: restarts.reverse() },
     harness: { overall: 'loading', failed: 0, warned: 0, checks: [], deferred: true },
     roadmap: [
@@ -3200,6 +3642,22 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, 'application/json', JSON.stringify({ ok: true, service: 'nova-ops-dashboard', generatedAt: new Date().toISOString() }));
     return;
   }
+  if (req.method === 'GET' && url.pathname === '/api/healthz') {
+    const harness = await collectHarness();
+    send(res, 200, 'application/json', JSON.stringify({
+      ok: true,
+      service: 'nova-ops-dashboard',
+      generatedAt: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      harness: {
+        overall: harness.overall,
+        available: Boolean(harness.snapshot?.available),
+        stale: Boolean(harness.snapshot?.stale),
+        ageMs: harness.snapshot?.ageMs ?? null,
+      },
+    }));
+    return;
+  }
   if (url.pathname === '/api/architecture') {
     try {
       const idx = await run('/Users/nova/.openclaw/workspace/bin/nova-ast-indexer', [ROOT], 10000);
@@ -3214,23 +3672,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/status') {
-    try {
-      const force = url.searchParams.get('refresh') === '1';
-      if (!force) {
-        const hit = cache.get('fast-status');
-        if (hit?.value) {
-          send(res, 200, 'application/json', JSON.stringify(await cached('fast-status', TTL.fastStatus, collectAndPersistStatus)));
-          return;
-        }
-        const snapshot = await readJsonFile(STATUS_SNAPSHOT_JSON);
-        if (snapshot) {
-          refreshInBackground('fast-status', TTL.fastStatus, collectAndPersistStatus);
-          send(res, 200, 'application/json', JSON.stringify({ ...snapshot, stale: true, cached: true, cacheAgeMs: Date.now() - new Date(snapshot.generatedAt).getTime() }));
-          return;
-        }
-      }
-      send(res, 200, 'application/json', JSON.stringify(await cached('fast-status', TTL.fastStatus, collectAndPersistStatus, force)));
-    }
+    try { send(res, 200, 'application/json', JSON.stringify(await readStatusSnapshotForApi())); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
@@ -3241,6 +3683,36 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/alert-routes') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('alert-routes', TTL.alertRoutes, collectAlertRoutes, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/startup') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('startup', TTL.startup, collectStartupLoop, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/auto-cron') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('auto-cron', TTL.autoCron, collectAutoCron, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/browser-runs') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('browser-runs', TTL.browserRuns, collectBrowserRuns, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/nova-events') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('nova-events', TTL.novaEvents, collectNovaEvents, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/proposals') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('proposals', TTL.proposals, collectProposals, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/classifier-stats') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('classifier-stats', TTL.classifierStats, collectClassifierStats, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
@@ -3277,11 +3749,6 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/minimax-quota') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('minimax-quota', TTL.minimaxQuota, collectMinimaxQuota, url.searchParams.get('refresh') === '1'))); }
-    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
-    return;
-  }
-  if (url.pathname === '/api/groq-quota') {
-    try { send(res, 200, 'application/json', JSON.stringify(await cached('groq-quota', TTL.groqQuota, collectGroqQuota, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e?.message || String(e) })); }
     return;
   }
@@ -3506,7 +3973,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/harness') {
-    try { send(res, 200, 'application/json', JSON.stringify(await cached('harness', TTL.harness, collectHarness, url.searchParams.get('refresh') === '1'))); }
+    try { send(res, 200, 'application/json', JSON.stringify(await collectHarness())); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
@@ -3527,7 +3994,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/job-runs') {
-    try { send(res, 200, 'application/json', JSON.stringify(await cached('job-runs', TTL.jobRuns, collectJobRuns, url.searchParams.get('refresh') === '1'))); }
+    try { send(res, 200, 'application/json', JSON.stringify(await readJobRunsSnapshotForApi())); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ jobs: [], runs: [], error: e.message })); }
     return;
   }
@@ -3558,6 +4025,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/team-control') {
     try { send(res, 200, 'application/json', JSON.stringify(await cached('team-control', TTL.teamControl, collectTeamControl, url.searchParams.get('refresh') === '1'))); }
+    catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (url.pathname === '/api/command-center') {
+    try { send(res, 200, 'application/json', JSON.stringify(await cached('command-center', TTL.teamControl, collectCommandCenter, url.searchParams.get('refresh') === '1'))); }
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
@@ -3724,6 +4196,71 @@ const server = http.createServer(async (req, res) => {
     catch (e) { send(res, 500, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
+  if (url.pathname === '/claude-context' || url.pathname === '/claude-context/') {
+    if (!checkClaudeAuth(req, url)) {
+      send(res, 401, 'text/plain', 'Unauthorized: Nova knowledge base requires token. Use ?token=, Authorization: Bearer, or X-Nova-Token header.');
+      return;
+    }
+    // Index endpoint: list curated MD files for AI-coding assistant discovery.
+    try {
+      const entries = await fsp.readdir(CLAUDE_CONTEXT_DIR, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e.isFile() && e.name.endsWith('.md'))
+        .map((e) => e.name)
+        .sort();
+      const body = [
+        '# Nova Context for AI Coding Assistants',
+        '',
+        'Curated knowledge base served from Nova Ops Dashboard.',
+        'Each file is intentionally a public-safe subset (no PII, no secrets, no infra paths).',
+        '',
+        '## Available files',
+        '',
+        ...files.map((f) => `- https://app.novaosai.work/claude-context/${f}`),
+        '',
+        '## Usage with Claude Code',
+        '',
+        '```',
+        '@https://app.novaosai.work/claude-context/about-nick.md',
+        '@https://app.novaosai.work/claude-context/tech-stack-map.md',
+        '@https://app.novaosai.work/claude-context/coding-standards.md',
+        '@https://app.novaosai.work/claude-context/infra-conventions.md',
+        '@https://app.novaosai.work/claude-context/dont-do.md',
+        '```',
+        '',
+      ].join('\n');
+      send(res, 200, 'text/markdown; charset=utf-8', body);
+    } catch (e) {
+      send(res, 500, 'text/plain', `Index error: ${e.message}`);
+    }
+    return;
+  }
+  if (url.pathname.startsWith('/claude-context/')) {
+    // Serve curated MD files for AI coding assistants on other machines.
+    // Requires token auth (see header on CLAUDE_CONTEXT_TOKEN loader above).
+    if (!checkClaudeAuth(req, url)) {
+      send(res, 401, 'text/plain', 'Unauthorized: Nova knowledge base requires token. Use ?token=, Authorization: Bearer, or X-Nova-Token header.');
+      return;
+    }
+    const name = url.pathname.slice('/claude-context/'.length);
+    if (!name || name.includes('/') || name.includes('\\') || name.includes('..') || !name.endsWith('.md')) {
+      send(res, 400, 'text/plain', 'Bad request: only top-level .md files allowed');
+      return;
+    }
+    const full = path.normalize(path.join(CLAUDE_CONTEXT_DIR, name));
+    if (!full.startsWith(CLAUDE_CONTEXT_DIR + path.sep)) {
+      send(res, 403, 'text/plain', 'Forbidden: path escapes claude-context dir');
+      return;
+    }
+    try {
+      const body = await fsp.readFile(full, 'utf8');
+      send(res, 200, 'text/markdown; charset=utf-8', body);
+    } catch (e) {
+      if (e.code === 'ENOENT') send(res, 404, 'text/plain', `Not found: ${name}`);
+      else send(res, 500, 'text/plain', `Error: ${e.message}`);
+    }
+    return;
+  }
   const file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
   const full = path.normalize(path.join(PUBLIC, file));
   if (!full.startsWith(PUBLIC)) return send(res, 403, 'text/plain', 'Forbidden');
@@ -3735,8 +4272,17 @@ const server = http.createServer(async (req, res) => {
   } catch { send(res, 404, 'text/plain', 'Not found'); }
 });
 
-if (!isServiceCmd) {
+if (isTelemetryRefreshCmd) {
+  refreshTelemetrySnapshots().then(result => {
+    console.log(JSON.stringify(result));
+    process.exitCode = result.ok ? 0 : 1;
+  }).catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+} else if (!isServiceCmd) {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`Nova Ops Dashboard running at http://127.0.0.1:${PORT}`);
+    startTelemetryProducer();
   });
 }
