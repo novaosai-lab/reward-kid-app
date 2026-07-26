@@ -1,0 +1,68 @@
+{
+  "app": {
+    "title": "Nova Invest · V2",
+    "subtitle": "Bitcoin · Gold · Thai Stocks intelligence dashboard",
+    "footer": "Market data is informational, not financial advice"
+  },
+  "tabs": {
+    "bitcoin": "Bitcoin Intelligence",
+    "gold": "Gold Intelligence",
+    "thaiStock": "SET Intelligence",
+    "dividend": "Dividend Screener",
+    "btcAlert": "BTC Alert",
+    "setAlert": "SET Alert"
+  },
+  "btc": {
+    "change24h": "เปลี่ยนแปลง 24 ชม.",
+    "change7d": "เปลี่ยนแปลง 7 วัน",
+    "change30d": "เปลี่ยนแปลง 30 วัน",
+    "updateBtn": "อัปเดตราคา",
+    "cycle": {
+      "title": "วิเคราะห์วัฏจักร (Cycle Intelligence)",
+      "marketPhase": "สถานะตลาด (Market Phase)",
+      "wmaLabel": "เส้นค่าเฉลี่ย 200 สัปดาห์",
+      "riskLabel": "ระดับความเสี่ยง (Risk Metric)",
+      "above": "สูงกว่า",
+      "below": "ต่ำกว่า",
+      "halvingLabel": "เวลาก่อนรอบถัดไป (Next Halving)",
+      "daysRemaining": "อีกประมาณ {days} วัน",
+      "daysElapsed": "ผ่านไปแล้ว {days} วัน",
+      "phases": {
+        "opportunity": "โอกาสทองชั่วอายุคน (เข้าซื้อเต็มที่)",
+        "accumulation": "ลานจอดยาน (ทยอยดักเก็บ)",
+        "ascending": "เริ่มพุ่งทะยาน (ถือรอรวย)",
+        "hotBull": "ตลาดกระทิงร้อนแรง (ระวังดอย)",
+        "peak": "จุดสูงสุด / โซนขายทำกำไร (เผ่น)"
+      }
+    }
+  },
+  "primitives": {
+    "button": {
+      "primary": "ปุ่มหลัก",
+      "secondary": "ปุ่มรอง",
+      "ghost": "ปุ่มโปร่งใส"
+    },
+    "card": {
+      "title": "การ์ดตัวอย่าง",
+      "body": "เนื้อหาการ์ด — ใช้ DS Card primitive"
+    },
+    "skeleton": {
+      "loading": "กำลังโหลด..."
+    },
+    "errorBoundary": {
+      "title": "เกิดข้อผิดพลาด",
+      "reset": "ลองใหม่"
+    },
+    "fetchers": {
+      "btc": "ราคา Bitcoin (USD)",
+      "gold": "ราคาทองคำ (THB)",
+      "set": "ดัชนีตลาดหุ้นไทย"
+    }
+  },
+  "signal": {
+    "strong": "Strong setup",
+    "constructive": "Constructive",
+    "neutral": "Neutral",
+    "weak": "Weak"
+  }
+}

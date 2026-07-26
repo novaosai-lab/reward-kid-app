@@ -1,0 +1,68 @@
+{
+  "app": {
+    "title": "Nova Invest · V2",
+    "subtitle": "Bitcoin · Gold · Thai Stocks intelligence dashboard",
+    "footer": "Market data is informational, not financial advice"
+  },
+  "tabs": {
+    "bitcoin": "Bitcoin Intelligence",
+    "gold": "Gold Intelligence",
+    "thaiStock": "SET Intelligence",
+    "dividend": "Dividend Screener",
+    "btcAlert": "BTC Alert",
+    "setAlert": "SET Alert"
+  },
+  "btc": {
+    "change24h": "24h Change",
+    "change7d": "7d Change",
+    "change30d": "30d Change",
+    "updateBtn": "Update Price",
+    "cycle": {
+      "title": "Cycle Analysis (Cycle Intelligence)",
+      "marketPhase": "Market Phase",
+      "wmaLabel": "200-Week Moving Average",
+      "riskLabel": "Risk Metric Level",
+      "above": "above",
+      "below": "below",
+      "halvingLabel": "Time Until Next Halving",
+      "daysRemaining": "Approx. {days} days remaining",
+      "daysElapsed": "{days} days elapsed",
+      "phases": {
+        "opportunity": "Generational Opportunity (Strong Buy)",
+        "accumulation": "Accumulation Zone (DCA Buy)",
+        "ascending": "Ascending Phase (Hold & Wait)",
+        "hotBull": "Hot Bull Market (Exercise Caution)",
+        "peak": "Cycle Peak / Profit Taking (Exit)"
+      }
+    }
+  },
+  "primitives": {
+    "button": {
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "ghost": "Ghost"
+    },
+    "card": {
+      "title": "Sample card",
+      "body": "Card body — uses DS Card primitive"
+    },
+    "skeleton": {
+      "loading": "Loading..."
+    },
+    "errorBoundary": {
+      "title": "Something went wrong",
+      "reset": "Try again"
+    },
+    "fetchers": {
+      "btc": "Bitcoin Price (USD)",
+      "gold": "Gold Price (THB)",
+      "set": "Thai Stock Indices"
+    }
+  },
+  "signal": {
+    "strong": "Strong setup",
+    "constructive": "Constructive",
+    "neutral": "Neutral",
+    "weak": "Weak"
+  }
+}
