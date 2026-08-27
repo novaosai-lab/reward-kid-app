@@ -1,0 +1,515 @@
+#!/opt/homebrew/bin/python3
+"""Nova agent-team DAG runner (v0.2).  Stdlib + PyYAML only."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import signal
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError:
+    print("ERROR: PyYAML is required", file=sys.stderr)
+    raise SystemExit(2)
+
+STATE = Path.home() / ".openclaw/state/agent-teams"
+RUNS = STATE / "runs"
+RESULTS = STATE / "results"
+BUDGET_TOOL = Path(__file__).with_name("nova-token-budget")
+TERMINAL = {"succeeded", "failed", "timed_out", "cancelled", "blocked",
+            "invalid_artifact", "skipped_dependency"}
+PROFILES = {
+    # Every node writes an artifact, so every profile needs `write`. Names
+    # describe *extra* tools (research network, artifact read), not file R/W.
+    "research-readonly": ["memory_search", "web_search", "web_fetch", "write"],
+    "artifact-readonly": ["memory_get", "read", "write"],
+    "final-writing": ["read", "write"],
+}
+cancel_event = threading.Event()
+active: dict[str, subprocess.Popen[str]] = {}
+active_lock = threading.Lock()
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def atomic_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def atomic_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{dst.name}.", dir=str(dst.parent))
+    try:
+        with os.fdopen(fd, "wb") as out, src.open("rb") as inp:
+            shutil.copyfileobj(inp, out)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, dst)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def load_yaml(name: str) -> tuple[dict[str, Any], Path, list[str]]:
+    path = Path(name).expanduser() if name.endswith((".yaml", ".yml")) else STATE / f"{name}.yaml"
+    if not path.exists():
+        raise ConfigError(f"team not found: {path}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ConfigError("team YAML root must be a mapping")
+    warnings: list[str] = []
+    if "api_version" not in raw and "agents" in raw:
+        warnings.append("v0.1 schema detected; mapped to v0.2 compatibility mode")
+        raw = map_v01(raw)
+    return raw, path, warnings
+
+
+def map_v01(old: dict[str, Any]) -> dict[str, Any]:
+    agents = old.get("agents", [])
+    nodes = []
+    previous: list[str] = []
+    for i, agent in enumerate(agents):
+        role = str(agent.get("role", f"node-{i+1}"))
+        profile = "research-readonly" if i == 0 else ("final-writing" if role == "writer" else "artifact-readonly")
+        node = {
+            "id": role, "role": role, "name": agent.get("name", role),
+            "description": agent.get("description", ""), "model": agent.get("model", "minimax-portal/MiniMax-M3"),
+            "thinking": "auto", "timeout": agent.get("timeout", 300),
+            "depends_on": list(previous), "permissions_profile": profile,
+            "input_contract": {"requires": list(previous)},
+            "output_contract": {"min_bytes": 64, "required_markers": []},
+            "retry": {"max_attempts": 1}, "estimated_tokens": 5000,
+            "output_format": agent.get("output_format", "Markdown"),
+        }
+        nodes.append(node)
+        previous = [role]
+    review_id = next((n["id"] for n in nodes if n["role"] == "reviewer"), None)
+    writer_id = next((n["id"] for n in nodes if n["role"] == "writer"), None)
+    return {
+        "api_version": "nova.openclaw/v0.2", "kind": "AgentTeam",
+        "metadata": {"name": old.get("name", "legacy-team"), "description": old.get("description", "")},
+        "defaults": {"max_concurrency": len(nodes) or 1, "timeout": 600},
+        "budget": {"max_tokens": sum(n["estimated_tokens"] for n in nodes)},
+        "permissions_profiles": PROFILES, "nodes": nodes,
+        "gates": ({"review": {"node": review_id, "approve": ["approve", "pass-with-nits"], "revise": "revise-required"}} if review_id else {}),
+        "publish": ({"source_node": writer_id, "artifact": str(STATE / "published" / "legacy-report.md"),
+                     "require": f"review:{review_id}:approve"} if writer_id and review_id else {}),
+        "shared": old.get("shared", {}),
+    }
+
+
+def model_thinking(model: str, requested: str | None) -> str:
+    m = model.lower()
+    allowed = {"off"} if "minimax-m3" in m else ({"low"} if any(x in m for x in ("m2.7", "gemma")) else {"off", "low"})
+    # YAML 1.1 (used by PyYAML) parses an unquoted `off` as False.
+    if requested is False:
+        requested = "off"
+    if requested in (None, "", "auto"):
+        return "low" if "low" in allowed and "openai/" not in m else "off"
+    if requested not in allowed:
+        raise ConfigError(f"model {model!r} is incompatible with thinking={requested!r}; allowed={sorted(allowed)}")
+    return requested
+
+
+def validate(team: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if team.get("api_version") != "nova.openclaw/v0.2": errors.append("api_version must be nova.openclaw/v0.2")
+    if team.get("kind") != "AgentTeam": errors.append("kind must be AgentTeam")
+    metadata = team.get("metadata")
+    if not isinstance(metadata, dict) or not metadata.get("name"): errors.append("metadata.name is required")
+    nodes = team.get("nodes")
+    if not isinstance(nodes, list) or not nodes: return errors + ["nodes must be a non-empty list"]
+    ids = [n.get("id") for n in nodes if isinstance(n, dict)]
+    if len(ids) != len(nodes) or any(not isinstance(x, str) or not x for x in ids): errors.append("every node needs a non-empty string id")
+    if len(set(ids)) != len(ids): errors.append("node ids must be unique")
+    profiles = dict(PROFILES)
+    declared = team.get("permissions_profiles", {})
+    if declared and not isinstance(declared, dict): errors.append("permissions_profiles must be a mapping")
+    elif isinstance(declared, dict): profiles.update(declared)
+    by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+    for n in nodes:
+        if not isinstance(n, dict): continue
+        nid = n.get("id", "?")
+        deps = n.get("depends_on", [])
+        if not isinstance(deps, list): errors.append(f"{nid}: depends_on must be a list"); continue
+        for dep in deps:
+            if dep not in by_id: errors.append(f"{nid}: unknown dependency {dep!r}")
+            if dep == nid: errors.append(f"{nid}: self-dependency")
+        profile = n.get("permissions_profile")
+        if profile not in profiles: errors.append(f"{nid}: unknown permissions_profile {profile!r}")
+        elif profiles.get(profile) != PROFILES.get(profile): errors.append(f"{nid}: built-in permission profile {profile!r} must map exactly to {PROFILES.get(profile)}")
+        try: n["thinking_resolved"] = model_thinking(str(n.get("model", "")), n.get("thinking"))
+        except ConfigError as exc: errors.append(f"{nid}: {exc}")
+        for key in ("estimated_tokens",):
+            if not isinstance(n.get(key), int) or n[key] <= 0: errors.append(f"{nid}: {key} must be a positive integer")
+        oc = n.get("output_contract", {})
+        if not isinstance(oc, dict) or not isinstance(oc.get("min_bytes"), int) or oc.get("min_bytes", 0) < 1:
+            errors.append(f"{nid}: output_contract.min_bytes must be >= 1")
+    # Kahn traversal catches cycles without recursion limits.
+    indegree = {nid: len(by_id[nid].get("depends_on", [])) for nid in by_id}
+    ready = [nid for nid, degree in indegree.items() if degree == 0]
+    visited = 0
+    while ready:
+        cur = ready.pop(); visited += 1
+        for nid, n in by_id.items():
+            if cur in n.get("depends_on", []):
+                indegree[nid] -= 1
+                if indegree[nid] == 0: ready.append(nid)
+    if visited != len(by_id): errors.append("depends_on graph contains a cycle")
+    estimated = sum(n.get("estimated_tokens", 0) for n in nodes if isinstance(n, dict))
+    max_tokens = team.get("budget", {}).get("max_tokens") if isinstance(team.get("budget"), dict) else None
+    if not isinstance(max_tokens, int) or max_tokens <= 0: errors.append("budget.max_tokens must be a positive integer")
+    elif estimated > max_tokens: errors.append(f"node estimated token total {estimated} exceeds budget.max_tokens {max_tokens}")
+    mc = team.get("defaults", {}).get("max_concurrency", 1)
+    if not isinstance(mc, int) or mc < 1: errors.append("defaults.max_concurrency must be >= 1")
+    publish = team.get("publish", {})
+    if publish:
+        if publish.get("source_node") not in by_id: errors.append("publish.source_node must reference a node")
+        if not publish.get("artifact") or not publish.get("require"): errors.append("publish.artifact and publish.require are required")
+    return errors
+
+
+def artifact_path(run_id: str, node_id: str) -> Path:
+    return RESULTS / f"{run_id}__{node_id}.md"
+
+
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""): h.update(chunk)
+    return h.hexdigest()
+
+
+def validate_artifact(path: Path, node: dict[str, Any], run_id: str, team: dict[str, Any] | None = None) -> tuple[bool, str]:
+    contract = node.get("output_contract", {})
+    if not path.is_file(): return False, "artifact missing"
+    if path.stat().st_size < contract.get("min_bytes", 1): return False, f"artifact smaller than {contract.get('min_bytes')} bytes"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    markers = [f"run_id: {run_id}", f"node_id: {node['id']}", f"role: {node.get('role', node['id'])}"]
+    markers += list(contract.get("required_markers", []))
+    missing = [m for m in markers if m not in text]
+    if missing: return False, "missing markers: " + ", ".join(missing)
+    # Reviewer-only: verdict must parse to one of the gate's allowed values
+    # (approve / pass-with-nits / revise-required). Catches reviewers that
+    # wrote `## Verdict` without a colon/value — marker check would still
+    # pass for `Verdict:` substrings but verdict() would silently return "".
+    if team:
+        gate = (team.get("gates") or {}).get("review") or {}
+        if gate.get("node") == node["id"]:
+            allowed = list(gate.get("approve", ["approve"])) + [gate.get("revise", "revise-required")]
+            v = verdict(path)
+            if v not in allowed:
+                return False, f"verdict not in {allowed}: got {v!r} (empty = could not parse)"
+    return True, "ok"
+
+
+def policy_overlay(tools_allow: list[str], run_dir: Path, node_id: str) -> tuple[dict[str, str], Path]:
+    """Create a transient config: policy is enforced by OpenClaw, not prose."""
+    source = Path(os.environ.get("OPENCLAW_CONFIG_PATH", str(Path.home() / ".openclaw/openclaw.json")))
+    config = json.loads(source.read_text(encoding="utf-8"))
+    agents = config.setdefault("agents", {})
+    entries = agents.setdefault("list", [])
+    main = next((a for a in entries if a.get("id") == "main"), None)
+    if main is None:
+        main = {"id": "main"}; entries.append(main)
+    main["tools"] = {"allow": tools_allow}
+    path = run_dir / f"policy-{node_id}.json"
+    path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    path.chmod(0o600)
+    env = os.environ.copy(); env["OPENCLAW_CONFIG_PATH"] = str(path)
+    return env, path
+
+
+def build_prompt(team: dict[str, Any], node: dict[str, Any], task: str, run_id: str,
+                 results: dict[str, dict[str, Any]], revision: int = 0) -> str:
+    path = artifact_path(run_id, node["id"])
+    inputs = []
+    for dep in node.get("depends_on", []):
+        p = Path(results[dep]["artifact"])
+        inputs.append(f"\n## Dependency {dep}\n{p.read_text(encoding='utf-8', errors='replace')}")
+    review = ""
+    if revision:
+        review_path = artifact_path(run_id, team["gates"]["review"]["node"])
+        if review_path.exists(): review = f"\n## Revision feedback\n{review_path.read_text(encoding='utf-8', errors='replace')}"
+    writer = team.get("publish", {}).get("source_node")
+    hash_instruction = ""
+    if node["id"] == team.get("gates", {}).get("review", {}).get("node") and writer in results:
+        hash_instruction = f"\nYou are reviewing writer SHA-256: {results[writer]['sha256']}\nInclude exactly: reviewed_sha256: {results[writer]['sha256']}"
+        # Always-on reviewer grammar: verdict() parser requires this exact one-line form.
+        # Without this rule, M2.7-highspeed splits "## Verdict" and value across lines
+        # (e.g. "### Verdict\n\nrevise-required"), causing silent publish gate failure.
+        gate = team.get("gates", {}).get("review", {})
+        values = list(gate.get("approve", ["approve"])) + [gate.get("revise", "revise-required")]
+        hash_instruction += f"\nREQUIRED: include exactly one standalone `## Verdict: VALUE` line where VALUE is one of {values}; never split the heading and value across lines."
+    return f"""You are node {node['id']} in Nova agent-team run {run_id}.
+Role: {node.get('role', node['id'])}
+{node.get('description', '')}
+
+Task: {task}
+Allowed tools (runtime enforced): {', '.join(PROFILES[node['permissions_profile']])}
+Input contract: {json.dumps(node.get('input_contract', {}), ensure_ascii=False)}
+Output format: {node.get('output_format', 'Markdown')}
+{''.join(inputs)}{review}{hash_instruction}
+
+Write the complete artifact to {path}. It MUST start with these exact lines:
+run_id: {run_id}
+node_id: {node['id']}
+role: {node.get('role', node['id'])}
+Then satisfy required markers: {node.get('output_contract', {}).get('required_markers', [])}.
+Do not publish or send externally. Reply only DONE after writing the file.
+"""
+
+
+def extract_tokens(text: str) -> int:
+    try: obj = json.loads(text)
+    except Exception: return 0
+    total = 0
+    def walk(v: Any) -> None:
+        nonlocal total
+        if isinstance(v, dict):
+            for k, value in v.items():
+                if k in {"totalTokens", "total_tokens"} and isinstance(value, int): total = max(total, value)
+                else: walk(value)
+        elif isinstance(v, list):
+            for item in v: walk(item)
+    walk(obj); return total
+
+
+def run_node(team: dict[str, Any], node: dict[str, Any], task: str, run_id: str,
+             results: dict[str, dict[str, Any]], run_dir: Path, revision: int = 0) -> dict[str, Any]:
+    nid = node["id"]; path = artifact_path(run_id, nid); path.unlink(missing_ok=True)
+    if cancel_event.is_set(): return {"node_id": nid, "status": "cancelled", "artifact": str(path)}
+    env, overlay = policy_overlay(PROFILES[node["permissions_profile"]], run_dir, nid)
+    timeout = int(node.get("timeout", team.get("defaults", {}).get("timeout", 600)))
+    session_key = f"agent:main:team-{run_id}-{nid}-r{revision}"
+    cmd = ["openclaw", "agent", "--local", "--json", "--agent", "main",
+           "--session-key", session_key, "--model", node["model"],
+           "--thinking", node["thinking_resolved"], "--timeout", str(timeout),
+           "--message", build_prompt(team, node, task, run_id, results, revision)]
+    started = time.monotonic()
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        with active_lock: active[session_key] = proc
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout + 30)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try: proc.wait(timeout=5)
+            except subprocess.TimeoutExpired: proc.kill()
+            return {"node_id": nid, "status": "timed_out", "session_key": session_key,
+                    "artifact": str(path), "elapsed_sec": round(time.monotonic() - started, 2)}
+        if cancel_event.is_set(): status = "cancelled"
+        elif proc.returncode != 0: status = "failed"
+        else:
+            valid, reason = validate_artifact(path, node, run_id, team)
+            status = "succeeded" if valid else "invalid_artifact"
+        result = {"node_id": nid, "status": status, "session_key": session_key,
+                  "artifact": str(path), "exit_code": proc.returncode,
+                  "elapsed_sec": round(time.monotonic() - started, 2),
+                  "actual_tokens": extract_tokens(stdout), "stdout_tail": stdout[-500:], "stderr_tail": stderr[-500:]}
+        if status == "invalid_artifact": result["error"] = reason
+        if status == "succeeded": result["sha256"] = sha256(path)
+        return result
+    except Exception as exc:
+        return {"node_id": nid, "status": "failed", "session_key": session_key,
+                "artifact": str(path), "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        with active_lock: active.pop(session_key, None)
+        overlay.unlink(missing_ok=True)
+
+
+def verdict(path: Path) -> str:
+    # Defensive: Path("") resolves to cwd (".") which is a directory, so
+    # .exists() would return True and .read_text() would raise IsADirectoryError.
+    if not str(path) or not path.is_file(): return ""
+    # Allow optional markdown heading prefix (## / ###) so reviewers that
+    # write `## Verdict: revise-required` still parse. Anchor at line start
+    # so we don't pick up prose like "the verdict is approve".
+    match = re.search(r"(?im)^\s*#*\s*(?:\*\*)?verdict(?:\*\*)?\s*:\s*([a-z][a-z-]*)", path.read_text(encoding="utf-8", errors="replace"))
+    return match.group(1).lower() if match else ""
+
+
+def update_manifest(path: Path, manifest: dict[str, Any], results: dict[str, dict[str, Any]]) -> None:
+    manifest["updated_at"] = now(); manifest["nodes"] = results
+    atomic_json(path, manifest)
+
+
+def schedule(team: dict[str, Any], task: str, run_id: str, manifest_path: Path,
+             manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    nodes = {n["id"]: n for n in team["nodes"]}; pending = set(nodes); results: dict[str, dict[str, Any]] = {}
+    max_workers = team.get("defaults", {}).get("max_concurrency", 1)
+    run_dir = manifest_path.parent / f"{run_id}.work"; run_dir.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        running: dict[Any, str] = {}
+        while pending or running:
+            if cancel_event.is_set():
+                for nid in pending: results[nid] = {"node_id": nid, "status": "cancelled"}
+                pending.clear()
+            progressed = False
+            for nid in list(pending):
+                deps = nodes[nid].get("depends_on", [])
+                if any(dep in results and results[dep]["status"] != "succeeded" for dep in deps):
+                    results[nid] = {"node_id": nid, "status": "skipped_dependency"}; pending.remove(nid); progressed = True
+                elif all(results.get(dep, {}).get("status") == "succeeded" for dep in deps) and len(running) < max_workers:
+                    future = pool.submit(run_node, team, nodes[nid], task, run_id, results, run_dir)
+                    running[future] = nid; pending.remove(nid); progressed = True
+            if running:
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    nid = running.pop(future); results[nid] = future.result()
+                    print(f"[{results[nid]['status']}] {nid}", flush=True)
+                    update_manifest(manifest_path, manifest, results)
+            elif pending and not progressed:
+                raise RuntimeError("scheduler made no progress")
+    # Exactly one bounded writer revision + re-review on revise-required.
+    gate = team.get("gates", {}).get("review", {}); review_id = gate.get("node")
+    writer_id = team.get("publish", {}).get("source_node")
+    if review_id in results and verdict(Path(results[review_id].get("artifact", ""))) == gate.get("revise", "revise-required") and writer_id:
+        print("[revision] revise-required; retrying writer and reviewer once", flush=True)
+        results[writer_id] = run_node(team, nodes[writer_id], task, run_id, results, run_dir, 1)
+        if results[writer_id]["status"] == "succeeded": results[review_id] = run_node(team, nodes[review_id], task, run_id, results, run_dir, 1)
+        else: results[review_id] = {"node_id": review_id, "status": "skipped_dependency"}
+        update_manifest(manifest_path, manifest, results)
+    shutil.rmtree(run_dir, ignore_errors=True)
+    return results
+
+
+def publish(team: dict[str, Any], results: dict[str, dict[str, Any]], run_id: str, manifest: dict[str, Any]) -> bool:
+    pub = team.get("publish", {}); gate = team.get("gates", {}).get("review", {})
+    if not pub: return True
+    source_id, review_id = pub.get("source_node"), gate.get("node")
+    source, review = results.get(source_id, {}), results.get(review_id, {})
+    review_artifact = review.get("artifact", "")
+    review_path = Path(review_artifact) if review_artifact else None
+    approved = verdict(review_path) in gate.get("approve", ["approve"]) if review_path else False
+    review_text = review_path.read_text(encoding="utf-8", errors="replace") if review_path and review_path.is_file() else ""
+    exact_hash = source.get("sha256") and f"reviewed_sha256: {source['sha256']}" in review_text
+    dst = Path(pub["artifact"]).expanduser()
+    if source.get("status") == review.get("status") == "succeeded" and approved and exact_hash:
+        atomic_copy(Path(source["artifact"]), dst)
+        manifest["publish"] = {"status": "succeeded", "artifact": str(dst), "sha256": source["sha256"]}
+        return True
+    summary = dst.with_name(dst.name + f".{run_id}.failure.md")
+    summary.parent.mkdir(parents=True, exist_ok=True)
+    summary.write_text(f"# Publish blocked\n\nrun_id: {run_id}\nsource_status: {source.get('status')}\nreview_status: {review.get('status')}\nverdict: {verdict(Path(review.get('artifact', '')))}\nexact_hash_approved: {bool(exact_hash)}\n", encoding="utf-8")
+    manifest["publish"] = {"status": "failed", "failure_summary": str(summary)}
+    return False
+
+
+def reserve_budget(estimated: int) -> None:
+    proc = subprocess.run([str(BUDGET_TOOL), "check", "--estimated", str(estimated)], text=True, capture_output=True)
+    if proc.returncode >= 2: raise RuntimeError(f"budget reservation denied: {(proc.stderr or proc.stdout).strip()}")
+    if proc.returncode == 1:
+        print(f"WARNING: budget guard: {(proc.stdout or proc.stderr).strip()}", file=sys.stderr)
+
+
+def record_budget(actual: int, run_id: str) -> None:
+    subprocess.run([str(BUDGET_TOOL), "record", "--actual", str(actual), "--item-id", run_id], check=False)
+
+
+def cancel_handler(signum: int, _frame: Any) -> None:
+    cancel_event.set()
+    with active_lock: items = list(active.items())
+    for session_key, proc in items:
+        try: proc.terminate()
+        except ProcessLookupError: pass
+        # Current OpenClaw builds may not expose this command; process termination remains authoritative.
+        subprocess.run(["openclaw", "sessions", "kill", session_key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"\n[cancel] received signal {signum}", file=sys.stderr, flush=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Run a validated Nova v0.2 agent-team DAG")
+    ap.add_argument("team", nargs="?"); ap.add_argument("task", nargs="?")
+    ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--list", action="store_true")
+    ap.add_argument("--output", help="override publish.artifact")
+    args = ap.parse_args()
+    if args.list:
+        for p in sorted(STATE.glob("*.yaml")): print(p.stem)
+        return 0
+    if not args.team or not args.task: ap.error("team and task are required")
+    try:
+        team, config_path, warnings = load_yaml(args.team)
+        errors = validate(team)
+        for warning in warnings: print(f"WARNING: {warning}", file=sys.stderr)
+        if errors: raise ConfigError("\n".join(f"- {e}" for e in errors))
+    except (ConfigError, OSError, yaml.YAMLError) as exc:
+        print(f"INVALID TEAM:\n{exc}", file=sys.stderr); return 2
+    if args.output: team.setdefault("publish", {})["artifact"] = args.output
+    estimated = sum(n["estimated_tokens"] for n in team["nodes"])
+    print(f"VALID team={team['metadata']['name']} nodes={len(team['nodes'])} tokens={estimated}")
+    for n in team["nodes"]:
+        print(f"  {n['id']}: deps={n.get('depends_on', [])} model={n['model']} thinking={n['thinking_resolved']} profile={n['permissions_profile']}")
+    if args.dry_run: return 0
+    run_id = str(uuid.uuid4()); manifest_path = RUNS / f"{run_id}.manifest.json"
+    manifest = {"api_version": "nova.openclaw/run-v0.2", "run_id": run_id, "team": team["metadata"]["name"],
+                "team_config": str(config_path), "task": args.task, "status": "planned", "created_at": now(),
+                "budget": {"estimated_tokens": estimated}, "nodes": {}}
+    atomic_json(manifest_path, manifest)  # durable plan exists before any node is spawned
+    results: dict[str, dict[str, Any]] = {}
+    try:
+        reserve_budget(estimated)
+        manifest["status"] = "running"; update_manifest(manifest_path, manifest, {})
+        results = schedule(team, args.task, run_id, manifest_path, manifest)
+        actual = sum(r.get("actual_tokens", 0) for r in results.values()); record_budget(actual, run_id)
+        manifest["budget"]["actual_tokens"] = actual
+        publish_ok = publish(team, results, run_id, manifest)
+        if cancel_event.is_set():
+            manifest["status"] = "cancelled"
+        elif publish_ok:
+            manifest["status"] = "succeeded"
+        elif all(r["status"] == "succeeded" for r in results.values()):
+            manifest["status"] = "blocked"  # all nodes OK but publish gate rejected (e.g. revise-required)
+        else:
+            manifest["status"] = "failed"
+        manifest["finished_at"] = now(); update_manifest(manifest_path, manifest, results)
+        print(f"[run] {manifest['status']} manifest={manifest_path}")
+        return 0 if manifest["status"] == "succeeded" else 1
+    except Exception as exc:
+        manifest["status"] = "cancelled" if cancel_event.is_set() else "blocked"
+        fallback_state = "cancelled" if cancel_event.is_set() else "blocked"
+        for node in team["nodes"]:
+            results.setdefault(node["id"], {"node_id": node["id"], "status": fallback_state})
+        manifest["nodes"] = results
+        manifest["error"] = f"{type(exc).__name__}: {exc}"; manifest["finished_at"] = now()
+        atomic_json(manifest_path, manifest); print(f"ERROR: {exc}", file=sys.stderr); return 130 if cancel_event.is_set() else 1
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, cancel_handler); signal.signal(signal.SIGTERM, cancel_handler)
+    raise SystemExit(main())
